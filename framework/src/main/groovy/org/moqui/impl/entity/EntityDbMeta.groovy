@@ -197,7 +197,6 @@ class EntityDbMeta {
                             tablesAdded++
 
                             if ( !(System.getenv('LOAD_DELAY_INDEX_ON_CREATE') == 'true')) {
-                                logger.error('creating indexes')
                                 // create explicit and foreign key auto indexes
                                 createIndexes(ed, false, con)
                                 // create foreign keys to all other tables that exist
@@ -409,7 +408,6 @@ class EntityDbMeta {
             createTable(ed, null)
             // create explicit and foreign key auto indexes
             if ( !(System.getenv('LOAD_DELAY_INDEX_ON_CREATE') == 'true')) {
-                logger.error('creating indexes')
                 createIndexes(ed, false, null)
                 // create foreign keys to all other tables that exist
                 createForeignKeys(ed, false, null, null)
@@ -792,7 +790,6 @@ class EntityDbMeta {
             EntityDefinition ed = efi.getEntityDefinition(en)
             if (ed.isViewEntity) continue
             if (tableExists(ed)) {
-                logger.error("creating indexes from createIndexesForExistingTables")
                 int result = createIndexes(ed, true, null)
                 created += result
             }
