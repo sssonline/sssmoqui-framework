@@ -320,7 +320,7 @@ along with this software (see the LICENSE.md file). If not, see
     <entity entity-name="DbFormField" package="moqui.screen.form" use="configuration">
         <field name="formId" type="id" is-pk="true"/>
         <field name="fieldName" type="text-medium" is-pk="true"/>
-        <field name="condition" type="text-medium">
+        <field name="condition" type="text-medium" column-name="DFF_CONDITION"> <!-- CONDITION is a DB2 keyword -->
             <description>Only show this field if the condition evaluates to true (Groovy expression)</description></field>
         <field name="entryName" type="text-medium"/>
         <field name="title" type="text-medium"/>
