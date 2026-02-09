@@ -758,6 +758,10 @@ class ExecutionContextFactoryImpl implements ExecutionContextFactory {
                 ec.getUser().loginAnonymousIfNoUser()
 
                 EntityDataLoader edl = ec.getEntity().makeDataLoader()
+                //set onlyCreate here to true as we dont want to run into using store and hitting failures on whole files due to
+                //default values on create only fields.
+                edl.onlyCreate(true)
+
                 if (onStartLoadTypes != 'all') edl.dataTypes(new HashSet(onStartLoadTypes.split(",") as List))
                 if (onStartLoadComponents && onStartLoadComponents != 'all') edl.componentNameList(onStartLoadComponents.split(",") as List)
 
