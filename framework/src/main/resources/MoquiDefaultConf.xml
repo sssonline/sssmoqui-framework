@@ -57,7 +57,7 @@
     <default-property name="entity_lock_track" value="false"/>
     <default-property name="entity_statement_timeout" value="false"/>
     <default-property name="entity_empty_db_load" value="seed,seed-initial,install"/>
-    <default-property name="entity_on_start_load_types" value="none"/>
+    <default-property name="entity_on_start_load_types" value="seed,seed-initial,install"/>
     <default-property name="entity_on_start_load_components" value=""/>
 
     <!-- Properties for a database clone; note that without overriding the transactional#clone1 datasource the default works only
