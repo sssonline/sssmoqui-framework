@@ -271,7 +271,7 @@ along with this software (see the LICENSE.md file). If not, see
             <xs:attribute name="type" type="xs:string" default="String">
                 <xs:annotation><xs:documentation>The type of the attribute, a full Java class name or one of the common
                     Java API classes (including String, Timestamp, Time, Date, Integer, Long, Float, Double, BigDecimal,
-                    BigInteger, Boolean, Object, Blob, Clob, Collection, List, Map, Set, Node).</xs:documentation></xs:annotation>
+                    BigInteger, Boolean, Object, Blob, Clob, Collection, List, Map, Set, Node, JsonList).</xs:documentation></xs:annotation>
             </xs:attribute>
             <xs:attribute name="format" type="xs:string">
                 <xs:annotation><xs:documentation>

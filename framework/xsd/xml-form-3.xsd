@@ -1248,4 +1248,125 @@ along with this software (see the LICENSE.md file). If not, see
             <xs:annotation><xs:documentation>If specified used as the parameter to pass instead of the field name.</xs:documentation></xs:annotation>
         </xs:attribute>
     </xs:complexType></xs:element>
+
+    <xs:element name="math-line" substitutionGroup="SubFields"><xs:complexType>
+        <xs:sequence>
+            <xs:element minOccurs="0" maxOccurs="unbounded" ref="depends-on">
+                <xs:annotation><xs:documentation>
+                    Optional. Standard depends-on nodes. If specified, math-line will be re-evaluated when any depends-on field changes.
+                    In percent-mode (when all percent wiring attributes are present), these should normally include the field referenced by @depends-on.
+                </xs:documentation></xs:annotation>
+            </xs:element>
+        </xs:sequence>
+
+        <xs:attribute name="size" type="xs:positiveInteger" default="30">
+            <xs:annotation><xs:documentation>HTML input size attribute (approximate visible character width). Default 30.</xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="maxlength" type="xs:positiveInteger">
+            <xs:annotation><xs:documentation>HTML input maxlength attribute. Limits how many characters the user can type.</xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="default-value" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Initial value placed in the expression input (and used for initial evaluation).
+                Supports normal Moqui resource expansion/localization where applicable.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="disabled" default="false" type="boolean">
+            <xs:annotation><xs:documentation>If true, disables the input (not editable and not submitted by the browser).</xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="read-only" default="false" type="boolean">
+            <xs:annotation><xs:documentation>If true, makes the input read-only (visible and submitted, but not editable).</xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="decimals" type="xs:nonNegativeInteger" default="0">
+            <xs:annotation><xs:documentation>
+                Number of decimal places to round the evaluated result to (default 0).
+                Rounding behavior is controlled by @rounding-behavior.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="show-result" type="boolean" default="false">
+            <xs:annotation><xs:documentation>
+                If true, replace the expression text with the rounded numeric result after evaluation.
+                If false, keep the expression visible while the submitted value is the computed result.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="prefix" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Text displayed to the left of the input box (for example a unit label).
+                Expanded/localized by the screen renderer.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="rounding-behavior" default="round">
+            <xs:annotation><xs:documentation>
+                How to round to @decimals:
+                - round: standard half-up rounding
+                - up: ceiling (away from negative infinity)
+                - down: floor (toward negative infinity)
+                - truncate: toward zero
+            </xs:documentation></xs:annotation>
+            <xs:simpleType>
+                <xs:restriction base="xs:string">
+                    <xs:enumeration value="round"/>
+                    <xs:enumeration value="up"/>
+                    <xs:enumeration value="down"/>
+                    <xs:enumeration value="truncate"/>
+                </xs:restriction>
+            </xs:simpleType>
+        </xs:attribute>
+
+        <!-- NEW: percent mode wiring -->
+        <xs:attribute name="depends-on" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Name of a field in the same form-single or form-list row that supplies the “key” value(s) used for percent-mode lookups.
+                Supports single-value fields or multi-select fields (multiple values).
+                When percent-mode is active, changes to this field trigger recalculation.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="target-entity" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Entity name to query when percent-mode is active (example: mantle.order.OrderItem).
+                The lookup-transition uses this along with @target-key-field, @target-field, @parameter-map, and the depends-on value(s).
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="target-key-field" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Field name in @target-entity that will be matched against the depends-on value(s).
+                Example: orderItemSeqId (matched to selected parentItemSeqId values).
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="target-field" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Numeric field in @target-entity whose value will be multiplied by the math-line result treated as a percentage.
+                Example: unitAmount.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="lookup-transition" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Transition name to call (via AJAX) to perform percent-mode lookups and return calculated results.
+                The transition should return JSON that includes a list of result maps (one per depends-on value).
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+
+        <xs:attribute name="parameter-map" type="xs:string">
+            <xs:annotation><xs:documentation>
+                Map literal of additional parameters used for the percent-mode lookup.
+                Format: [paramName:contextFieldName,...]
+                Example: [orderId:orderId,orderPartSeqId:orderPartSeqId]
+                RHS values are resolved from the current screen/context and sent to @lookup-transition along with depends-on selections.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
+    </xs:complexType></xs:element>
+
+
 </xs:schema>

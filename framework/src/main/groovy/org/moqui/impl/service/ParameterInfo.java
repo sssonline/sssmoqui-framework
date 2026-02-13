@@ -33,7 +33,7 @@ public class ParameterInfo {
     protected final static Logger logger = LoggerFactory.getLogger(ParameterInfo.class);
 
     public enum ParameterAllowHtml { ANY, SAFE, NONE }
-    public enum ParameterType { STRING, INTEGER, LONG, FLOAT, DOUBLE, BIG_DECIMAL, BIG_INTEGER, TIME, DATE, TIMESTAMP, LIST, SET, MAP }
+    public enum ParameterType { STRING, INTEGER, LONG, FLOAT, DOUBLE, BIG_DECIMAL, BIG_INTEGER, TIME, DATE, TIMESTAMP, LIST, SET, MAP, JSON_LIST }
     public static Map<String, ParameterType> typeEnumByString = new HashMap<>();
     static {
         typeEnumByString.put("String", ParameterType.STRING); typeEnumByString.put("java.lang.String", ParameterType.STRING);
@@ -51,6 +51,7 @@ public class ParameterInfo {
         typeEnumByString.put("List", ParameterType.LIST); typeEnumByString.put("java.util.List", ParameterType.LIST);
         typeEnumByString.put("Set", ParameterType.SET); typeEnumByString.put("java.util.Set", ParameterType.SET);
         typeEnumByString.put("Map", ParameterType.MAP); typeEnumByString.put("java.util.Map", ParameterType.MAP);
+        typeEnumByString.put("JsonList", ParameterType.JSON_LIST);
     }
 
     public final ServiceDefinition sd;
@@ -83,7 +84,13 @@ public class ParameterInfo {
         String typeAttr = parameterNode.attribute("type");
         type = typeAttr == null || typeAttr.isEmpty() ? "String" : typeAttr;
         parmType = typeEnumByString.get(type);
-        parmClass = MClassLoader.getCommonClass(type);
+        if (parmType == ParameterType.JSON_LIST){
+            parmClass = java.util.List.class;
+        }else{
+            parmClass = MClassLoader.getCommonClass(type);
+        }
+
+
 
         format = parameterNode.attribute("format");
         entityName = parameterNode.attribute("entity-name");
@@ -225,6 +232,39 @@ public class ParameterInfo {
                             eci.messageFacade.addValidationError(null, namePrefix + name, serviceName,
                                     "Could not convert JSON to Map", e);
                         }
+                    }
+                    break;
+                case JSON_LIST:
+                    try {
+                        Object jsonVal = ContextJavaUtil.jacksonMapper.readValue(valueStr, Object.class);
+
+                        ArrayList<Map> outList = new ArrayList<>();
+
+                        if (jsonVal instanceof List) {
+                            List<?> jl = (List<?>) jsonVal;
+                            for (Object entry : jl) {
+                                if (entry instanceof Map) {
+                                    outList.add((Map) entry);
+                                } else if (entry != null) {
+                                    eci.messageFacade.addValidationError(null, namePrefix + name, serviceName,
+                                            "JsonList entries must be JSON objects (maps); found: " + entry.getClass().getName(), null);
+                                }
+                            }
+                            converted = outList;
+                            break;
+                        }
+
+                        if (jsonVal instanceof Map) {
+                            outList.add((Map) jsonVal);
+                            converted = outList;
+                            break;
+                        }
+
+                        eci.messageFacade.addValidationError(null, namePrefix + name, serviceName,
+                                "JsonList must be a JSON array or JSON object", null);
+                    } catch (Exception e) {
+                        eci.messageFacade.addValidationError(null, namePrefix + name, serviceName,
+                                "Could not convert JSON to JsonList (List<Map>)", e);
                     }
                     break;
             }
