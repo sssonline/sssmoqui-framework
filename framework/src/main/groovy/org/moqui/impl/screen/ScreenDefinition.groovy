@@ -45,10 +45,8 @@ import javax.servlet.http.HttpServletResponse
 @CompileStatic
 class ScreenDefinition {
     private final static Logger logger = LoggerFactory.getLogger(ScreenDefinition.class)
-    private final static Set<String> scanWidgetNames = new HashSet<String>(
-            ['section', 'section-iterate', 'section-include', 'form-single', 'form-list', 'tree', 'subscreens-panel', 'subscreens-menu'])
-    private final static Set<String> screenStaticWidgetNames = new HashSet<String>(
-            ['subscreens-panel', 'subscreens-menu', 'subscreens-active'])
+    private final static Set<String> scanWidgetNames = new HashSet<String>(['section', 'section-iterate', 'section-include', 'form-single', 'form-list', 'tree', 'subscreens-panel', 'subscreens-menu', 'tabs'])
+    private final static Set<String> screenStaticWidgetNames = new HashSet<String>(['subscreens-panel', 'subscreens-menu', 'subscreens-active', 'tabs'])
 
     @SuppressWarnings("GrFinalVariableAccess") protected final ScreenFacadeImpl sfi
     @SuppressWarnings("GrFinalVariableAccess") protected final MNode screenNode
@@ -80,6 +78,7 @@ class ScreenDefinition {
     protected Map<String, ScreenTree> treeByName = new HashMap<>()
     protected final Set<String> dependsOnScreenLocations = new HashSet<>()
     protected boolean hasTabMenu = false
+    protected final Set<String> tabsParmNameSet = new HashSet<>()
 
     protected Map<String, ResourceReference> subContentRefByPath = new HashMap()
     protected Map<String, String> macroTemplateByRenderMode = null
@@ -326,6 +325,16 @@ class ScreenDefinition {
                 if (type == null || type.isEmpty() || "tab".equals(type)) { hasTabMenu = true; break }
             }
 
+            // collect tab parameter names for pass-through (tabs.@parm-name)
+            ArrayList<MNode> tabsNodeList = descMap.get('tabs')
+            if (tabsNodeList != null) for (MNode tabsNode in tabsNodeList) {
+                String parmName = tabsNode.attribute("parm-name")
+                // if blank ignore; if dynamic (${...}) ignore at load time (can't reliably resolve here)
+                if (parmName != null && !parmName.isEmpty() && !parmName.contains('${')) {
+                    tabsParmNameSet.add(parmName)
+                }
+            }
+
             if (serverStatic == null) {
                 // if there are no elements except subscreens-panel, subscreens-active, and subscreens-menu then set serverStatic to all
                 boolean otherElements = false
@@ -364,7 +373,7 @@ class ScreenDefinition {
         dependsOnScreenLocations.add(location)
 
         Map<String, ArrayList<MNode>> descMap = includeSection.sectionNode.descendants(
-                new HashSet<String>(['section', 'section-iterate', 'section-include', 'form-single', 'form-list', 'tree']))
+                new HashSet<String>(['section', 'section-iterate', 'section-include', 'form-single', 'form-list', 'tree', 'tabs']))
 
         // see if the included section contains any SECTIONS, need to reference those here too!
         for (MNode inclRefNode in descMap.get('section'))
@@ -388,6 +397,14 @@ class ScreenDefinition {
 
         for (MNode treeNode in descMap.get('tree'))
             treeByName.put(treeNode.attribute("name"), includeScreen.getTree(treeNode.attribute("name")))
+
+        ArrayList<MNode> tabsNodeList = descMap.get('tabs')
+        if (tabsNodeList != null) for (MNode tabsNode in tabsNodeList) {
+            String parmName = tabsNode.attribute("parm-name")
+            if (parmName != null && !parmName.isEmpty() && !parmName.contains('${')) {
+                tabsParmNameSet.add(parmName)
+            }
+        }
     }
 
     void populateSubscreens() {
@@ -491,6 +508,7 @@ class ScreenDefinition {
     Map<String, ParameterItem> getParameterMap() { return parameterByName }
     boolean hasRequiredParameters() { return hasRequired }
     boolean hasTabMenu() { return hasTabMenu }
+    Set<String> getTabsParmNameSet() { return tabsParmNameSet }
 
     XmlAction getPreActions() { return preActions }
     XmlAction getAlwaysActions() { return alwaysActions }

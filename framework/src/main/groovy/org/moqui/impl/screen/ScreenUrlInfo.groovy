@@ -976,6 +976,19 @@ class ScreenUrlInfo {
         }
 
         String getRequestMethod() { return ec.web != null ? ec.web.request.method : "" }
+
+        protected Set<String> getTabsPassThroughParmNames() {
+            Set<String> parmNames = new HashSet<>()
+
+            // include tab parm-name from any screen in this URL's screen path (parents + target)
+            if (sui?.screenPathDefList != null) for (ScreenDefinition sd in sui.screenPathDefList) {
+                Set<String> s = sd.getTabsParmNameSet()
+                if (s != null && !s.isEmpty()) parmNames.addAll(s)
+            }
+
+            return parmNames
+        }
+
         TransitionItem getTargetTransition() {
             if (curTargetTransition == null && sui.targetScreen != null && sui.targetTransitionActualName != null)
                 curTargetTransition = sui.targetScreen.getTransitionItem(sui.targetTransitionActualName, getRequestMethod())
@@ -1079,7 +1092,7 @@ class ScreenUrlInfo {
                     String valueStr = ObjectUtilities.toPlainString(value)
                     if (valueStr != null && valueStr.length() > 0) allParameterMap.put(pi.name, valueStr)
                 }
-                String targetServiceName = targetTransition.getSingleServiceName()
+                String targetServiceName = targetTrans.getSingleServiceName()
                 if (targetServiceName != null && targetServiceName.length() > 0) {
                     ServiceDefinition sd = ec.serviceFacade.getServiceDefinition(targetServiceName)
                     Map<String, Object> csMap = ec.contextStack.getCombinedMap()
@@ -1120,6 +1133,24 @@ class ScreenUrlInfo {
             if (transitionAliasParameters != null) allParameterMap.putAll(transitionAliasParameters)
             // add all parameters added to the instance after
             allParameterMap.putAll(otherParameterMap)
+
+            // add tab parameters (tabs.@parm-name) as pass-through values
+            Set<String> tabsParmNames = getTabsPassThroughParmNames()
+            if (tabsParmNames != null && !tabsParmNames.isEmpty()) {
+                Map<String, Object> csMap = ec.contextStack.getCombinedMap()
+                Map<String, Object> wfParameters = ec.getWeb()?.getParameters()
+
+                for (String pn in tabsParmNames) {
+                    if (pn == null || pn.isEmpty()) continue
+                    if (allParameterMap.containsKey(pn)) continue
+
+                    Object value = csMap.get(pn)
+                    if (ObjectUtilities.isEmpty(value) && wfParameters != null) value = wfParameters.get(pn)
+
+                    String valueStr = ObjectUtilities.toPlainString(value)
+                    if (valueStr != null && valueStr.length() > 0) allParameterMap.put(pn, valueStr)
+                }
+            }
 
             // logger.info("TOREMOVE Getting parameterMap [${pm}] for targetScreen [${targetScreen.location}]")
             return allParameterMap
@@ -1179,17 +1210,34 @@ class ScreenUrlInfo {
         Map getOtherParameterMap() { return otherParameterMap }
 
         UrlInstance passThroughSpecialParameters() {
-            copySpecialParameters(ec.context, otherParameterMap)
+            copySpecialParameters(ec.context, otherParameterMap, getTabsPassThroughParmNames())
             return this
         }
         static void copySpecialParameters(Map fromMap, Map toMap) {
+            copySpecialParameters(fromMap, toMap, null)
+        }
+
+        static void copySpecialParameters(Map fromMap, Map toMap, Set<String> extraParmNames) {
             if (!fromMap || toMap == null) return
+
             for (String fieldName in fromMap.keySet()) {
                 if (fieldName.startsWith("formDisplayOnly")) toMap.put(fieldName, (String) fromMap.get(fieldName))
             }
             if (fromMap.containsKey("pageNoLimit")) toMap.put("pageNoLimit", (String) fromMap.get("pageNoLimit"))
             if (fromMap.containsKey("lastStandalone")) toMap.put("lastStandalone", (String) fromMap.get("lastStandalone"))
             if (fromMap.containsKey("renderMode")) toMap.put("renderMode", (String) fromMap.get("renderMode"))
+
+            // copy additional named parameters (used for tabs pass-through, etc)
+            if (extraParmNames != null && !extraParmNames.isEmpty()) {
+                for (String pn in extraParmNames) {
+                    if (!pn) continue
+                    if (fromMap.containsKey(pn)) {
+                        Object v = fromMap.get(pn)
+                        String vs = ObjectUtilities.toPlainString(v)
+                        if (vs != null && vs.length() > 0) toMap.put(pn, vs)
+                    }
+                }
+            }
         }
         Map<String, String> getPassThroughParameterMap() {
             Map<String, String> paramMap = new HashMap<>(getParameterMap())

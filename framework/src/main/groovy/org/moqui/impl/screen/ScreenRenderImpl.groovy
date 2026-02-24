@@ -562,13 +562,19 @@ class ScreenRenderImpl implements ScreenRender {
                     // default is screen-path
                     UrlInstance fullUrl = buildUrl(rootScreenDef, screenUrlInfo.preTransitionPathNameList, url)
                     // copy through pageIndex if passed so in form-list with multiple pages we stay on same page
-                    if (web.requestParameters.containsKey("pageIndex")) fullUrl.addParameter("pageIndex", (String) web.parameters.get("pageIndex"))
-                    // copy through orderByField if passed so in form-list with multiple pages we retain the sort order
-                    if (web.requestParameters.containsKey("orderByField")) fullUrl.addParameter("orderByField", (String) web.parameters.get("orderByField"))
+                    if (web.requestParameters.containsKey("pageIndex"))
+                        fullUrl.addParameter("pageIndex", (String) web.requestParameters.get("pageIndex"))
+                    if (web.requestParameters.containsKey("orderByField"))
+                        fullUrl.addParameter("orderByField", (String) web.requestParameters.get("orderByField"))
                     fullUrl.addParameters(ri.expandParameters(screenUrlInfo.getExtraPathNameList(), ec))
                     // if this was a screen-last and the screen has declared parameters include them in the URL
                     Map savedParameters = wfi?.getSavedParameters()
-                    UrlInstance.copySpecialParameters(savedParameters, fullUrl.getOtherParameterMap())
+                    Set<String> tabParmNames = new HashSet<>()
+                    if (fullUrl.sui?.screenPathDefList != null) for (ScreenDefinition sd in fullUrl.sui.screenPathDefList) {
+                        Set<String> s = sd.getTabsParmNameSet()
+                        if (s != null && !s.isEmpty()) tabParmNames.addAll(s)
+                    }
+                    UrlInstance.copySpecialParameters(savedParameters, fullUrl.getOtherParameterMap(), tabParmNames)
                     // screen parameters
                     Map<String, ScreenDefinition.ParameterItem> parameterItemMap = fullUrl.sui.pathParameterItems
                     if (isScreenLast && savedParameters != null && savedParameters.size() > 0) {

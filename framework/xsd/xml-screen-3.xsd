@@ -488,17 +488,17 @@ along with this software (see the LICENSE.md file). If not, see
             There are four ways to add subscreens to a screen (in order of override):
 
             1. for screens within a single application by directory structure:
-                create a directory in the directory where the parent screen is named the same as
-                the parent screen's filename and put XML Screen files in that directory (name=filename up to .xml,
-                title=screen.default-title, location=parent screen minus filename plus directory and filename for
-                subscreen)
+            create a directory in the directory where the parent screen is named the same as
+            the parent screen's filename and put XML Screen files in that directory (name=filename up to .xml,
+            title=screen.default-title, location=parent screen minus filename plus directory and filename for
+            subscreen)
             2. for including screens that are part of another application, or shared and not in any application:
-                subscreens-item elements below the screen.subscreens element (this element)
+            subscreens-item elements below the screen.subscreens element (this element)
             3. for adding screens or changing order and title of screens to an existing application:
-                screen-facade.screen and subscreens-item elements in the Moqui Conf XML file including MoquiConf.xml in
-                a component; this subscreens-item element is much like the subscreens.subscreens-item element
+            screen-facade.screen and subscreens-item elements in the Moqui Conf XML file including MoquiConf.xml in
+            a component; this subscreens-item element is much like the subscreens.subscreens-item element
             4. for adding screens, removing screens, or changing order and title of screens to an existing application:
-                a record in the moqui.screen.SubscreensItem entity
+            a record in the moqui.screen.SubscreensItem entity
 
             There are two visual elements (widgets) that come from the subscreens, a menu and the active subscreen.
             Those are included with the widgets using the "subscreens-menu" and "subscreens-active" elements, or the
@@ -594,6 +594,79 @@ along with this software (see the LICENSE.md file). If not, see
         <xs:attribute name="id" type="xs:string" use="required"/>
         <xs:attribute name="title" type="xs:string"/>
         <xs:attribute name="header-menus-id" type="xs:string" default="header-menus"/>
+    </xs:complexType></xs:element>
+
+    <!-- ================ Tabs (custom widget) ================ -->
+    <xs:element name="tabs" substitutionGroup="AllWidgets"><xs:annotation>
+        <xs:documentation>
+            A lightweight tabbed container similar to subscreens tabs, but NOT driven by the URL/screen path.
+            Tab selection is controlled by a request parameter (tabs.@parm-name) and/or a default-item.
+
+            Intended use:
+            - Multiple independent tab groups on a single screen
+            - Tab groups inside container-dialog popups
+            - Rendering all tab contents (safe) and switching visibility client-side
+        </xs:documentation>
+    </xs:annotation><xs:complexType>
+        <xs:sequence>
+            <xs:element ref="tab" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+
+        <xs:attribute name="name" type="xs:string"><xs:annotation><xs:documentation>
+            Logical name for this tab group. Useful for debugging, rendering IDs, and avoiding collisions when multiple tab groups exist.
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="id" type="xs:string"><xs:annotation><xs:documentation>
+            Optional explicit HTML/container id to use when rendering the tab group. If not specified, an id may be derived from @name.
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="parm-name" type="xs:string"><xs:annotation><xs:documentation>
+            The web/request parameter name used to store the currently selected tab name.
+            Example: parm-name="invoiceTab" means ?invoiceTab=SalesPayableInvoices selects that tab.
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="default-item" type="xs:string"><xs:annotation><xs:documentation>
+            The default tab name to select when the parameter indicated by @parm-name is empty or missing.
+            If not specified, the first tab element is the default.
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="style" type="xs:string"><xs:annotation><xs:documentation>
+            Optional CSS class/style token(s) used by the renderer for the outer container (implementation-specific).
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="condition" type="xs:string"><xs:annotation><xs:documentation>
+            Groovy condition expression (evaluates to a boolean). If false, the entire tab group is not rendered.
+        </xs:documentation></xs:annotation></xs:attribute>
+    </xs:complexType></xs:element>
+
+    <xs:element name="tab"><xs:annotation>
+        <xs:documentation>
+            A single tab within a tabs widget. Contains normal widget content that is shown when the tab is active.
+            Content may still be rendered (for safety/consistency) and hidden client-side based on active selection.
+        </xs:documentation>
+    </xs:annotation><xs:complexType>
+        <xs:group ref="widget-elements" minOccurs="0" maxOccurs="unbounded"/>
+
+        <xs:attribute name="name" type="name-plain" use="required"><xs:annotation><xs:documentation>
+            The tab identifier used for selection. This is the value matched against tabs.@parm-name in the request.
+            Example: name="SalesPayableInvoices"
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="title" type="xs:string"><xs:annotation><xs:documentation>
+            The display title shown in the tab header/label area.
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="id" type="xs:string"><xs:annotation><xs:documentation>
+            Optional explicit HTML/container id for the tab pane/content wrapper (implementation-specific).
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="style" type="xs:string"><xs:annotation><xs:documentation>
+            Optional CSS class/style token(s) for this tab header and/or tab content wrapper (implementation-specific).
+        </xs:documentation></xs:annotation></xs:attribute>
+
+        <xs:attribute name="condition" type="xs:string"><xs:annotation><xs:documentation>
+            Groovy condition expression (evaluates to a boolean). If false, this tab (header and content) is not rendered.
+        </xs:documentation></xs:annotation></xs:attribute>
     </xs:complexType></xs:element>
 
     <!-- ================ Sections ================ -->
@@ -947,4 +1020,5 @@ along with this software (see the LICENSE.md file). If not, see
             </xs:extension>
         </xs:simpleContent>
     </xs:complexType></xs:element>
+
 </xs:schema>

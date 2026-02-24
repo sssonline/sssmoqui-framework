@@ -271,18 +271,40 @@ class WebFacadeImpl implements WebFacade {
             session.setAttribute("moqui.screen.history", screenHistoryList)
         }
 
+        // Gather tab pass-through parm names for this URL path (parent + target)
+        Set<String> tabParmNames = new HashSet<>()
+        if (sui?.screenPathDefList != null) for (ScreenDefinition sd in sui.screenPathDefList) {
+            Set<String> s = sd.getTabsParmNameSet()
+            if (s != null && !s.isEmpty()) tabParmNames.addAll(s)
+        }
+
+        // clone instance for safe manipulation, but DO NOT mutate the internal cached parameter map
         ScreenUrlInfo.UrlInstance urlInstance = urlInstanceOrig.cloneUrlInstance()
-        // instead of ignoring page index for history (old approach), retain but exclude in history duplicate search
-        urlInstance.getParameterMap().remove("pageIndex")
-        // logger.warn("======= parameters: ${urlInstance.getParameterMap()}")
+
+        // Use TreeMap so query string is deterministic (prevents random duplicates due to param order)
+        Map<String, String> pmNoNoise = new TreeMap<>(urlInstance.getParameterMap())
+        // exclude pageIndex and tab parm-name values for duplicate comparisons and history uniqueness
+        pmNoNoise.remove("pageIndex")
+        if (tabParmNames) for (String pn in tabParmNames) pmNoNoise.remove(pn)
+
+        // URLs
         String urlWithAllParams = urlInstanceOrig.getUrlWithParams()
-        String urlWithParamsNoPageIndex = urlInstance.getUrlWithParams()
-        String urlNoParams = urlInstance.getUrl()
-        // logger.warn("======= urlWithParams: ${urlWithParams}")
+        String urlNoParams = urlInstanceOrig.getUrl()
+
+        // build a URL-with-params string from pmNoNoise (so urlNoPageIndex/tab matches our duplicate rules)
+        StringBuilder ps = new StringBuilder()
+        for (Map.Entry<String, String> pme in pmNoNoise.entrySet()) {
+            if (!pme.value) continue
+            if (pme.key == "moquiSessionToken") continue
+            if (ps.length() > 0) ps.append("&")
+            ps.append(StringUtilities.urlEncodeIfNeeded(pme.key)).append("=").append(StringUtilities.urlEncodeIfNeeded(pme.value))
+        }
+        String urlWithParamsNoNoise = urlNoParams
+        if (ps.length() > 0) urlWithParamsNoNoise = urlNoParams.concat("?").concat(ps.toString())
 
         // if is the same as last screen skip it
         Map firstItem = screenHistoryList.size() > 0 ? screenHistoryList.get(0) : null
-        if (firstItem != null && firstItem.url == urlWithParamsNoPageIndex) return
+        if (firstItem != null && firstItem.urlNoPageIndex == urlWithParamsNoNoise) return
 
         String targetMenuName = targetScreen.getDefaultMenuName()
 
@@ -298,8 +320,9 @@ class WebFacadeImpl implements WebFacade {
             nameBuilder.append(eci.getResource().expand(targetMenuName, targetScreen.getLocation()))
         } else {
             nameBuilder.append(targetMenuName)
-            // append parameter values
-            Map parameters = urlInstance.getParameterMap()
+
+            // append parameter values (exclude tab params + other noise)
+            Map<String, String> parameters = new HashMap<>(pmNoNoise)
             StringBuilder paramBuilder = new StringBuilder()
             if (parameters) {
                 int pCount = 0
@@ -310,9 +333,9 @@ class WebFacadeImpl implements WebFacade {
                     if (entry.key.contains("_not")) continue
                     if (entry.key.contains("_ic")) continue
                     if ("moquiSessionToken".equals(entry.key)) continue
-                    if (entry.value.trim().length() == 0) continue
+                    if (entry.value == null || entry.value.trim().length() == 0) continue
 
-                    // injection issue with name field: userId=%3Cscript%3Ealert(%27Test%20Crack!%27)%3C/script%3E
+                    // injection issue with name field
                     String parmValue = entry.value
                     if (parmValue) parmValue = URLEncoder.encode(parmValue, "UTF-8")
                     paramBuilder.append(parmValue)
@@ -325,16 +348,16 @@ class WebFacadeImpl implements WebFacade {
         }
 
         synchronized (screenHistoryList) {
-            // remove existing item(s) from list with same URL
+            // remove existing item(s) from list with same URL (using our no-noise comparison URL)
             Iterator<Map> screenHistoryIter = screenHistoryList.iterator()
             while (screenHistoryIter.hasNext()) {
                 Map screenHistory = screenHistoryIter.next()
-                if (screenHistory.urlNoPageIndex == urlWithParamsNoPageIndex) screenHistoryIter.remove()
+                if (screenHistory.urlNoPageIndex == urlWithParamsNoNoise) screenHistoryIter.remove()
             }
             // add to history list
             screenHistoryList.add(0, [name:nameBuilder.toString(), url:urlWithAllParams, urlNoParams:urlNoParams,
-                    urlNoPageIndex:urlWithParamsNoPageIndex, path:urlInstance.path, pathWithParams:urlInstance.pathWithParams,
-                    image:sui.menuImage, imageType:sui.menuImageType, screenLocation:targetScreen.getLocation()])
+                                      urlNoPageIndex:urlWithParamsNoNoise, path:urlInstance.path, pathWithParams:urlInstance.pathWithParams,
+                                      image:sui.menuImage, imageType:sui.menuImageType, screenLocation:targetScreen.getLocation()])
             // trim the list if needed; keep 40, whatever uses it may display less
             while (screenHistoryList.size() > 40) screenHistoryList.remove(40)
         }
@@ -1309,8 +1332,18 @@ class WebFacadeImpl implements WebFacade {
     void saveScreenLastInfo(String screenPath, Map parameters) {
         session.setAttribute("moqui.screen.last.path", screenPath ?: getPathInfo())
         parameters = parameters ?: new HashMap(getRequestParameters())
-        // logger.warn("saveScreenLastInfo parameters: ${parameters}")
-        // logger.warn("saveScreenLastInfo getRequestParameters(): ${getRequestParameters().toString()}")
+
+        // sanitize - never persist these in session “last” parameters
+        parameters.remove("moquiSessionToken")
+        parameters.remove("moquiFormName")
+        parameters.remove("moquiRequestStartTime")
+        parameters.remove("webrootTT")
+        parameters.remove("lastStandalone")
+        parameters.remove("renderMode")
+
+        // optional: if you never want page index sticky across login/screen-last
+        // parameters.remove("pageIndex")
+
         WebUtilities.testSerialization("moqui.screen.last.parameters", parameters)
         session.setAttribute("moqui.screen.last.parameters", parameters)
     }
@@ -1351,6 +1384,15 @@ class WebFacadeImpl implements WebFacade {
         Map currentSavedParameters = (Map) request.session.getAttribute("moqui.saved.parameters")
         if (currentSavedParameters) parms.putAll(currentSavedParameters)
         parms.putAll(parameters)
+
+        // sanitize - never persist these
+        parms.remove("moquiSessionToken")
+        parms.remove("moquiFormName")
+        parms.remove("moquiRequestStartTime")
+        parms.remove("webrootTT")
+        parms.remove("lastStandalone")
+        parms.remove("renderMode")
+
         if (!"production".equals(System.getProperty("instance_purpose")))
             WebUtilities.testSerialization("moqui.saved.parameters", parms)
         session.setAttribute("moqui.saved.parameters", parms)
@@ -1363,6 +1405,15 @@ class WebFacadeImpl implements WebFacade {
         if (currentSavedParameters) parms.putAll(currentSavedParameters)
         if (requestParameters) parms.putAll(requestParameters)
         // don't include attributes, end up with internal stuff in URL parameters: if (requestAttributes) parms.putAll(requestAttributes)
+
+        // sanitize - never persist these
+        parms.remove("moquiSessionToken")
+        parms.remove("moquiFormName")
+        parms.remove("moquiRequestStartTime")
+        parms.remove("webrootTT")
+        parms.remove("lastStandalone")
+        parms.remove("renderMode")
+
         if (!"production".equals(System.getProperty("instance_purpose")))
             WebUtilities.testSerialization("moqui.saved.parameters", parms)
         session.setAttribute("moqui.saved.parameters", parms)
@@ -1373,6 +1424,15 @@ class WebFacadeImpl implements WebFacade {
         Map parms = new HashMap()
         if (requestParameters) parms.putAll(requestParameters)
         // don't include attributes, end up with internal stuff in URL parameters: if (requestAttributes) parms.putAll(requestAttributes)
+
+        // sanitize - never persist these
+        parms.remove("moquiSessionToken")
+        parms.remove("moquiFormName")
+        parms.remove("moquiRequestStartTime")
+        parms.remove("webrootTT")
+        parms.remove("lastStandalone")
+        parms.remove("renderMode")
+
         if (!"production".equals(System.getProperty("instance_purpose")))
             WebUtilities.testSerialization("moqui.error.parameters", parms)
         session.setAttribute("moqui.error.parameters", parms)
