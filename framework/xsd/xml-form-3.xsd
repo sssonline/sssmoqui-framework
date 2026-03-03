@@ -1228,6 +1228,14 @@ along with this software (see the LICENSE.md file). If not, see
         <xs:attribute name="depends-optional" type="boolean" default="false">
             <xs:annotation><xs:documentation>Set to true to get options even if a depends-on field is empty.</xs:documentation></xs:annotation>
         </xs:attribute>
+        <xs:attribute name="initial-load" type="boolean" default="false">
+            <xs:annotation>
+                <xs:documentation>
+                    If true, load dynamic options immediately when the drop-down component is initialized (page load or dialog render),
+                    without waiting for a depends-on field change event. Default is false to preserve the current behavior.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
         <xs:attribute name="server-search" type="boolean" default="false">
             <xs:annotation><xs:documentation>For drop-down if true pass search term to server to filter results.
                 Transition that processes results should limit options. Sort of like an autocomplete and supports the same
