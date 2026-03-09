@@ -251,6 +251,133 @@ along with this software (see the LICENSE.md file). If not, see
                 <message public="true" type="success">Password updated for user ${userAccount.username}</message></if>
         </actions>
     </service>
+
+    <service verb="reset" noun="UpdatePassword" authenticate="anonymous-all" allow-remote="true">
+        <description>Set a user's password using the resetPassword (not the current password). Intended for anonymous flow; does not assume a logged-in user.</description>
+        <in-parameters>
+            <parameter name="userId"><description>Optional; may be used to identify user.</description></parameter>
+            <parameter name="username"><description>May be used instead of userId to identify user.</description></parameter>
+            <parameter name="resetPassword" required="true">
+                <description>The temporary reset password issued for the user (UserAccount.resetPassword). Ignored if user has password admin permissions.</description>
+            </parameter>
+            <parameter name="newPassword" required="true"/>
+            <parameter name="newPasswordVerify" required="true"/>
+            <parameter name="code"><description>Second factor authentication, required if second factor required for user</description></parameter>
+        </in-parameters>
+        <out-parameters>
+            <parameter name="username"/>
+            <parameter name="passwordIssues" type="Boolean"/>
+            <parameter name="updateSuccessful" type="Boolean"/>
+        </out-parameters>
+        <actions>
+            <log level="error" message="inside reset Password service"/>
+            <set field="hasPwAdminPermission" from="ec.user.hasPermission('ADMIN_PASSWORD')"/>
+            <set field="passwordIssues" from="false"/>
+            <set field="updateSuccessful" from="false"/>
+
+            <if condition="userId"><then>
+                <entity-find-one entity-name="moqui.security.UserAccount" value-field="userAccount"/>
+            </then><else-if condition="username">
+                <entity-find-one entity-name="moqui.security.UserAccount" value-field="userAccount">
+                    <field-map field-name="username"/>
+                </entity-find-one>
+            </else-if><else>
+                <script>
+                    ec.message.addError("Must specify userId or username")
+                </script>
+                <return public="true" error="true"/>
+            </else></if>
+
+            <if condition="userAccount == null">
+                <script>
+                    ec.message.addError("Could not find user with name ${username}")
+                </script>
+                <return public="true" error="true"/>
+            </if>
+
+            <set field="userId" from="userAccount.userId"/>
+            <set field="username" from="userAccount.username"/>
+
+            <if condition="!hasPwAdminPermission">
+                <service-call name="org.moqui.impl.UserServices.get#UserAuthcFactorRequired" out-map="context">
+                    <field-map field-name="userId"/>
+                </service-call>
+
+                <set field="codeVerified" from="false"/>
+                <if condition="secondFactorRequired">
+                    <if condition="ec.web?.sessionAttributes?.moquiPreAuthcUsername">
+                        <service-call name="org.moqui.impl.UserServices.validate#UserAuthcFactorCode"
+                                      in-map="[userId:userId, code:code]" out-map="validateCodeOut"/>
+                        <if condition="!validateCodeOut.verified">
+                            <script>
+                                ec.message.addError("Authentication code not valid")
+                            </script>
+                            <return public="true" error="true"/>
+                        </if>
+                        <set field="codeVerified" from="true"/>
+                    </if>
+                </if>
+
+                <if condition="!codeVerified">
+                    <if condition="!resetPassword">
+                        <script>
+                            ec.message.addError("Please enter reset password")
+                        </script>
+                        <return public="true" error="true"/>
+                    </if>
+
+                    <if condition="!userAccount.resetPassword">
+                        <script>
+                            ec.message.addError("No reset password is set for user ${username}. Please request a password reset first.")
+                        </script>
+                        <return public="true" error="true"/>
+                    </if>
+
+                    <script>
+                        def token = new org.apache.shiro.authc.UsernamePasswordToken((String) userAccount.username, (String) resetPassword)
+                        def info = new org.apache.shiro.authc.SimpleAuthenticationInfo(userAccount.username, userAccount.resetPassword,
+                        userAccount.passwordSalt ? new org.apache.shiro.util.SimpleByteSource((String) userAccount.passwordSalt) : null, "moquiRealm")
+                    </script>
+
+                    <if condition="!ec.ecfi.getCredentialsMatcher(userAccount.passwordHashType, 'Y'.equals(userAccount.passwordBase64)).doCredentialsMatch(token, info)">
+                        <script>
+                            ec.message.addError("Reset password incorrect for user ${username}")
+                        </script>
+                        <return public="true" error="true"/>
+                    </if>
+
+                    <if condition="secondFactorRequired">
+                        <if condition="!code">
+                            <if condition="ec.web?.sessionAttributes">
+                                <set field="ec.web?.sessionAttributes?.moquiPreAuthcUsername" from="username"/>
+                            </if>
+                            <script>
+                                ec.message.addError("Authentication code required for user ${username}")
+                            </script>
+                            <return public="true" error="true"/>
+                        </if>
+
+                        <service-call name="org.moqui.impl.UserServices.validate#UserAuthcFactorCode"
+                                      in-map="[userId:userId, code:code]" out-map="validateCodeOut"/>
+                        <if condition="!validateCodeOut.verified">
+                            <script>
+                                ec.message.addError("Authentication code not valid")
+                            </script>
+                            <return public="true" error="true"/>
+                        </if>
+                    </if>
+                </if>
+            </if>
+
+            <service-call name="org.moqui.impl.UserServices.update#PasswordInternal" out-map="context"
+                          in-map="[userId:userId, newPassword:newPassword, newPasswordVerify:newPasswordVerify]"/>
+
+            <if condition="updateSuccessful &amp;&amp; !ec.message.hasError()">
+                <message public="true" type="success">Password updated for user ${userAccount.username}</message>
+            </if>
+        </actions>
+    </service>
+
     <service verb="update" noun="PasswordInternal" authenticate="false" allow-remote="false">
         <in-parameters>
             <parameter name="userId" required="true"/>
@@ -377,6 +504,16 @@ along with this software (see the LICENSE.md file). If not, see
             <parameter name="emailTemplateId" default-value="PASSWORD_RESET"/>
         </in-parameters>
         <actions>
+            <!--TODO: is there a better way to get this setting by org like it should be? without a logged in user to grab the activeOrg hard to say atm-->
+            <entity-find-one entity-name="mantle.party.PartySetting" value-field="baseAppUrl">
+                <field-map field-name="partySettingTypeId" value="EmailBaseUrl"/>
+            </entity-find-one>
+            <if condition="baseAppUrl"><then>
+                <set field="baseUrl" from="baseAppUrl.settingValue"/>
+            </then><else>
+                <set field="baseUrl" from="ec.web.getWebappRootUrl(true, null)"/>
+            </else></if>
+
             <!-- find by userId -->
             <entity-find-one entity-name="moqui.security.UserAccount" value-field="userAccount" for-update="true"/>
             <if condition="userAccount == null">
@@ -409,7 +546,7 @@ along with this software (see the LICENSE.md file). If not, see
             <service-call name="org.moqui.impl.EmailServices.send#EmailTemplate" async="true">
                 <field-map field-name="emailTemplateId"/>
                 <field-map field-name="toAddresses" from="userAccount.emailAddress"/>
-                <field-map field-name="bodyParameters" from="bodyParameters + [userAccount:userAccount, resetPassword:resetPassword]"/>
+                <field-map field-name="bodyParameters" from="bodyParameters + [userAccount:userAccount, resetPassword:resetPassword, baseUrl:baseUrl]"/>
             </service-call>
             <message public="true" type="success">A reset password was sent to the email of username ${userAccount.username}. This password may only be used to change your password. Your current password is still valid.</message>
             <if condition="userAccount.requirePasswordChange == 'Y'"><message public="true" type="info">You must change your password before login.</message></if>
