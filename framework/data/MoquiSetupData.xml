@@ -17,6 +17,10 @@ along with this software (see the LICENSE.md file). If not, see
     <moqui.basic.email.EmailTemplate emailTemplateId="PASSWORD_RESET" description="Default Password Reset" emailServerId="SYSTEM"
             emailTypeEnumId="EMT_PWD_RESET" bodyScreenLocation="classpath://screen/PasswordReset.xml" webappName="webroot"
             fromAddress="${fromAddress?:'sssemail@sssonline.com'}" ccAddresses="" bccAddresses="" subject="Password Reset" sendPartial="Y"/>
+    <!-- EmailTemplate for forgot username-->
+    <moqui.basic.email.EmailTemplate emailTemplateId="FORGOT_USERNAME" description="Default Forgot Username" emailServerId="SYSTEM"
+           emailTypeEnumId="EMT_PWD_RESET" bodyScreenLocation="classpath://screen/ForgotUsername.xml" webappName="webroot"
+           fromAddress="${fromAddress?:'sssemail@sssonline.com'}" ccAddresses="" bccAddresses="" subject="Forgot Username" sendPartial="Y"/>
     <!-- EmailTemplate for single use codes -->
     <moqui.basic.email.EmailTemplate emailTemplateId="SINGLE_USE_CODE" description="Send single use code" emailServerId="SYSTEM"
             emailTypeEnumId="EMT_SINGLE_USE_CODE" bodyScreenLocation="classpath://screen/SingleUseCode.xml" webappName="webroot"

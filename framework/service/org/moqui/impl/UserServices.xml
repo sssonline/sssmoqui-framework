@@ -553,6 +553,43 @@ along with this software (see the LICENSE.md file). If not, see
         </actions>
     </service>
 
+    <service verb="send" noun="ForgotUsername" authenticate="anonymous-all" allow-remote="true">
+        <in-parameters>
+            <parameter name="userEmail"/>
+            <parameter name="bodyParameters" type="Map" default="[:]"/>
+            <parameter name="emailTemplateId" default-value="FORGOT_USERNAME"/>
+        </in-parameters>
+        <actions>
+            <!--TODO: is there a better way to get this setting by org like it should be? without a logged in user to grab the activeOrg hard to say atm-->
+            <entity-find-one entity-name="mantle.party.PartySetting" value-field="baseAppUrl">
+                <field-map field-name="partySettingTypeId" value="EmailBaseUrl"/>
+            </entity-find-one>
+            <if condition="baseAppUrl"><then>
+                <set field="baseUrl" from="baseAppUrl.settingValue"/>
+            </then><else>
+                <set field="baseUrl" from="ec.web.getWebappRootUrl(true, null)"/>
+            </else></if>
+
+            <!-- find by email, break if not found -->
+            <entity-find-one entity-name="moqui.security.UserAccount" value-field="userAccount">
+                <field-map field-name="emailAddress" from="userEmail"/>
+            </entity-find-one>
+            <if condition="userAccount == null">
+                <message public="true" type="danger">Could not find a user with this email: ${userEmail}</message>
+                <return error="true" message="Account not found"/>
+            </if>
+
+            <!-- send an email with the users username -->
+            <service-call name="org.moqui.impl.EmailServices.send#EmailTemplate" async="true">
+                <field-map field-name="emailTemplateId"/>
+                <field-map field-name="toAddresses" from="userAccount.emailAddress"/>
+                <field-map field-name="bodyParameters" from="bodyParameters + [userAccount:userAccount, baseUrl:baseUrl]"/>
+            </service-call>
+            <message public="true" type="success">An email was sent to ${userAccount.emailAddress} with your username.</message>
+        </actions>
+    </service>
+
+
     <service verb="create" noun="InitialAdminAccount" authenticate="anonymous-all">
         <in-parameters>
             <parameter name="username" required="true"/>
