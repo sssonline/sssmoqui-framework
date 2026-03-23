@@ -10,4 +10,3 @@ mkdir -p ${backup_root}/backup$1/db
 cp -R $MOQUI_HOME/runtime/db/derby ${backup_root}/backup$1/db
 cp -R $MOQUI_HOME/runtime/db/h2 ${backup_root}/backup$1/db
 cp -R $MOQUI_HOME/runtime/db/orientdb ${backup_root}/backup$1/db
-cp -R $MOQUI_HOME/runtime/elasticsearch ${backup_root}/backup$1

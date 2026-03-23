@@ -9,4 +9,3 @@ gradle cleanDb
 cp -R ${backup_root}/backup$1/db/derby ${MOQUI_HOME}/runtime/db/
 cp -R ${backup_root}/backup$1/db/h2 ${MOQUI_HOME}/runtime/db/
 cp -R ${backup_root}/backup$1/db/orientdb ${MOQUI_HOME}/runtime/db/
-cp -R ${backup_root}/backup$1/elasticsearch ${MOQUI_HOME}/runtime/
