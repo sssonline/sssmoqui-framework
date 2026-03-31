@@ -97,6 +97,9 @@ dependencies {
 
     // ========== General Libraries from Maven Central ==========
 
+    // SMB protocol support
+    api 'com.hierynomus:smbj:0.13.0' // Apache 2.0
+
     // Apache Commons
     api 'org.apache.commons:commons-csv:1.10.0' // Apache 2.0
     // NOTE: commons-email depends on com.sun.mail:javax.mail, included below, so use module() here to not get dependencies
