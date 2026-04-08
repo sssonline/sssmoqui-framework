@@ -599,7 +599,8 @@ class ScreenRenderImpl implements ScreenRender {
                     if (!sendJsonRedirect(fullUrl, renderStartTime)) {
                         String fullUrlString = fullUrl.getUrlWithParams(screenUrlInfo.targetTransitionExtension)
                         if (logger.isInfoEnabled()) logger.info("Transition ${screenUrlInfo.getFullPathNameList().join("/")} in ${System.currentTimeMillis() - renderStartTime}ms, redirecting to screen path URL: ${fullUrlString}")
-                        response.sendRedirect(fullUrlString)
+                        //TODO: i dont know how safe this is but need this to always hit vapps for manual transition hit.
+                        response.sendRedirect(fullUrlString.replace('/apps/','/vapps/'))
                     }
                 }
             } else {
