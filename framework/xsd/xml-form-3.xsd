@@ -1000,7 +1000,10 @@ along with this software (see the LICENSE.md file). If not, see
             <xs:annotation><xs:documentation>If true submit the form when an option is selected (qvt only as of 2022-02-23)</xs:documentation></xs:annotation>
         </xs:attribute>
         <xs:attribute name="current-description" type="xs:string"/>
-        <!-- currently not supported (allow text entry or select option): <xs:attribute name="combo-box" type="boolean" default="false"/> -->
+        <xs:attribute name="combo-box" type="boolean-expandable" default="false">
+            <xs:annotation><xs:documentation>If true (vuet/qvt only) allow the user to type a free-form value in addition to picking
+                from the options list. The typed value is submitted as the field value.</xs:documentation></xs:annotation>
+        </xs:attribute>
         <xs:attribute name="show-not" type="xs:string" default="false"/>
         <xs:attribute name="style" type="xs:string"/>
     </xs:complexType></xs:element>
