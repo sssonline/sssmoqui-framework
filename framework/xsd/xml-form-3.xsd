@@ -984,6 +984,14 @@ along with this software (see the LICENSE.md file). If not, see
         </xs:sequence>
         <xs:attribute name="allow-empty" type="boolean-expandable" default="false"/>
         <xs:attribute name="allow-multiple" type="boolean-expandable" default="false"/>
+        <xs:attribute name="allow-reorder" type="boolean-expandable" default="false"><xs:annotation><xs:documentation>
+            If true AND allow-multiple is true, the selected items (chips) can be reordered by click-and-drag.
+            Implementation lives in basalt: BasaltScreenMacros.vuet.ftl emits the `allow-reorder` marker class
+            on the rendered element when this is true and allow-multiple is true; the drag-reorder handler in
+            basalt/screen/basaltstatic/js/common.js binds Sortable to those widgets and mirrors the new order
+            back to the underlying select so form submissions follow display order.
+            No effect on single-select dropdowns. (Project extension.)
+        </xs:documentation></xs:annotation></xs:attribute>
         <xs:attribute name="priority-search" type="boolean-expandable" default="false"><xs:annotation><xs:documentation>
             If true search will prioritize results in order of matches at the beginning of the string, whole words first, and then substrings.</xs:documentation></xs:annotation></xs:attribute>
         <xs:attribute name="size" type="xs:integer" default="1"/>
