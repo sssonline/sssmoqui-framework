@@ -1098,6 +1098,12 @@ along with this software (see the LICENSE.md file). If not, see
         <xs:attribute name="prefix" type="xs:string">
             <xs:annotation><xs:documentation>Text displayed to the left of the input box, expanded and localized</xs:documentation></xs:annotation>
         </xs:attribute>
+        <xs:attribute name="placeholder" type="xs:string">
+            <xs:annotation><xs:documentation>HTML placeholder attribute for the input: greyed hint text shown while the
+                field is empty, expanded against context. Useful for showing an inherited/default value that entering a
+                real value overrides (e.g. the size feature's default piece count on the Packaging Conversion size popup).
+                Supported in the vuet render macro (plain text-line only, not the auto-complete variant).</xs:documentation></xs:annotation>
+        </xs:attribute>
 
         <xs:attribute name="ac-transition" type="xs:string">
             <xs:annotation><xs:documentation>If specified the text-line will have auto-complete added to it with
