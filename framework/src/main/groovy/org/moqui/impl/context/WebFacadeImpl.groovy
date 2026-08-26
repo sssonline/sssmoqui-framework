@@ -504,6 +504,13 @@ class WebFacadeImpl implements WebFacade {
 
     @Override String getRequestBodyText() { return requestBodyText }
     @Override String getResourceDistinctValue() {
+        // In non-production instances (instance_purpose set and not 'production' — the same check the
+        // vapps/qapps shells use to serve unminified JS) return a per-request value: initStartHex only
+        // changes on app restart, so an edited static JS/CSS file kept being served from browser cache
+        // under an unchanged ?v= URL, making dev JS fixes appear broken until a manual cache clear.
+        String instancePurpose = System.getProperty("instance_purpose")
+        if (instancePurpose != null && !instancePurpose.isEmpty() && !"production".equals(instancePurpose))
+            return Long.toHexString(System.currentTimeMillis())
         return eci.ecfi.initStartHex
     }
 
