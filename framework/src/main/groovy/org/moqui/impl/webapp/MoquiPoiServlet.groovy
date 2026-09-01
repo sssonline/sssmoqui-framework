@@ -192,13 +192,15 @@ class MoquiPoiServlet extends HttpServlet {
                         for( int c = 0; c < rowData.size(); c++ ) {
                             def cell = rowData[c].toString().replaceAll(/[, ]/,'')
                             isNum[c] = isNum[c] && (cell.isNumber() || cell == "")
-                            // If not a number, check for currency format
+                            // If not a number, check for currency format; an empty cell is tolerated the
+                            // same way isNum tolerates it — one blank row shouldn't demote a currency
+                            // column to text (it did, and the null-shift fix now makes blanks explicit)
                             if( !isNum[c] ) {
-                                isCurrency[c] = isCurrency[c] && cell.length() > 2 &&
+                                isCurrency[c] = isCurrency[c] && (cell == "" || cell.length() > 2 &&
                                                 (cell.substring(0, 1) == '$' && cell.substring(1).isNumber() ||
                                                  (cell.substring(0, 2) == '($' || cell.substring(0, 2) == '$(') &&
                                                  cell.substring(cell.length()-1) == ')' &&
-                                                 cell.substring(2, cell.length()-1).isNumber())
+                                                 cell.substring(2, cell.length()-1).isNumber()))
                             }
                             anyTrue = anyTrue || isNum[c] || isCurrency[c]
                         }
