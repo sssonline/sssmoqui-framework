@@ -102,6 +102,9 @@ class MoquiPoiServlet extends HttpServlet {
                 def title   = lists[i]["title"].toString().replaceAll(/\s+/, ' ')
                 def columns = (ArrayList)lists[i]["columns"]
                 def data    = (ArrayList)lists[i]["data"]
+                // per-column type hints from the json render ("text"/"auto"), aligned with columns;
+                // null when the producer doesn't emit them — value sniffing then decides alone (card #943)
+                def colTypes = (ArrayList)lists[i]["colTypes"]
 
                 // EXPERIMENTAL:
                 // If the number of columns and data do not match, likely it is being caused
@@ -113,6 +116,8 @@ class MoquiPoiServlet extends HttpServlet {
                     if (logger.infoEnabled) logger.info("Data   : ${((ArrayList)data[0]).size()}")
 
                     def trimmedCols = new ArrayList<String>()
+                    // colTypes is positionally aligned with columns, so it must be trimmed in lockstep
+                    def trimmedTypes = colTypes != null ? new ArrayList<String>() : null
                     for( int c = 0; c < columns.size(); c++ ) {
                         def colHeading = columns[c].toString()
                         if( colHeading != "New" &&
@@ -124,9 +129,11 @@ class MoquiPoiServlet extends HttpServlet {
                             colHeading != "Edit" &&
                             colHeading != "Delete") {
                             trimmedCols.add(colHeading)
+                            if( trimmedTypes != null && c < colTypes.size() ) trimmedTypes.add(colTypes[c].toString())
                         }
                     }
                     columns = trimmedCols
+                    if( trimmedTypes != null ) colTypes = trimmedTypes
                 }
 
                 // Create a new sheet for this list
@@ -197,6 +204,14 @@ class MoquiPoiServlet extends HttpServlet {
                         }
                         if( !anyTrue ) break
                     }
+                    // Declared "text" columns are identifiers (invoice/order/trouble numbers etc): they
+                    // must export as text no matter what their values sniff as, so the sheet matches the
+                    // screen and pasted ids still match text-keyed lookups (card #943)
+                    if( colTypes != null ) {
+                        for( int c = 0; c < colTypes.size() && c < isNum.size(); c++ ) {
+                            if( colTypes[c].toString() == "text" ) { isNum[c] = false; isCurrency[c] = false }
+                        }
+                    }
                     for( int d = 0; d < data.size(); d++ ) {
                         XSSFRow curRow = sheet.createRow(d + (omitHeaderRow ? 0 : 1))
                         def rowData = (ArrayList)data[d]
@@ -207,7 +222,9 @@ class MoquiPoiServlet extends HttpServlet {
                                 cellVal = cellVal.replaceAll(/[, ]/,'')
                                 cell.setCellStyle(dataNumberStyle)
                                 if( cellVal != '' ) {
-                                    cell.setCellValue(cellVal.isInteger() ? cellVal.toInteger() : cellVal.toDouble())
+                                    // isLong not isInteger: an all-digit value past 2^31 fell through to
+                                    // toDouble() and rendered in scientific notation
+                                    cell.setCellValue(cellVal.isLong() ? cellVal.toLong() : cellVal.toDouble())
                                 }
                             }
                             else if( isCurrency[c] ) {
