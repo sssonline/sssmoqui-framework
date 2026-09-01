@@ -240,6 +240,9 @@ test {
     maxParallelForks 1
 
     dependsOn cleanTest
+    // the classpath below includes projectDir, which contains build/libs — Gradle 8's implicit-dependency
+    // validation fails the task unless the jar producer is declared (fires on any framework file change)
+    dependsOn jar
     include '**/*MoquiSuite.class'
 
     systemProperty 'moqui.runtime', '../runtime'
