@@ -842,7 +842,9 @@ along with this software (see the LICENSE.md file). If not, see
 
     <xs:element name="container-dialog" substitutionGroup="AllWidgets"><xs:annotation>
         <xs:documentation>The contents start out hidden with only a button with the button-text on it.
-            When the button is clicked on a dialog opens to show the contents.</xs:documentation>
+            When the button is clicked on a dialog opens to show the contents. Used as a form-single field widget, the
+            button renders in the field but the dialog itself renders after the screen (outside the form, as
+            dynamic-dialog's does) so its contents don't inherit the form's layout styles (vuet render mode).</xs:documentation>
     </xs:annotation><xs:complexType>
         <xs:group ref="widget-elements" minOccurs="0" maxOccurs="unbounded"/>
         <xs:attribute name="id" type="xs:string" use="required"/>
@@ -856,6 +858,11 @@ along with this software (see the LICENSE.md file). If not, see
         <xs:attribute name="icon" type="xs:string"><xs:annotation><xs:documentation>Icon class for the dialog's
             button. When absent a default icon is used (fa fa-external-link). An explicitly EMPTY value
             (icon="") renders the button with no icon at all.</xs:documentation></xs:annotation></xs:attribute>
+        <xs:attribute name="tooltip" type="xs:string"><xs:annotation><xs:documentation>Hover tooltip for the
+            dialog's button, also used as the button's accessible name (aria-label) - needed for an icon-only
+            button (button-text=" "). The button's data-toggle is taken by the modal, so it renders the
+            data-tooltip marker the app-wide delegated tooltip init picks up. Supported in the vuet render
+            mode only.</xs:documentation></xs:annotation></xs:attribute>
     </xs:complexType></xs:element>
 
     <xs:element name="dynamic-dialog" substitutionGroup="StandaloneFields"><xs:annotation>
