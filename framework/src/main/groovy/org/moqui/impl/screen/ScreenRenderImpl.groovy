@@ -600,7 +600,6 @@ class ScreenRenderImpl implements ScreenRender {
                         String fullUrlString = fullUrl.getUrlWithParams(screenUrlInfo.targetTransitionExtension)
                         if (logger.isInfoEnabled()) logger.info("Transition ${screenUrlInfo.getFullPathNameList().join("/")} in ${System.currentTimeMillis() - renderStartTime}ms, redirecting to screen path URL: ${fullUrlString}")
                         //TODO: i dont know how safe this is but need this to always hit vapps for manual transition hit.
-                        logger.error("fullUrl.sui.targetScreenRenderMode is: "+fullUrl.sui.targetScreenRenderMode)
                         // Redirect standard UI requests to the Vue wrapper (/vapps/)
                         // For non-HTML modes (CSV, PDF, etc.) or standalone renders, stay on /apps/
                         Map<String, String> parmMap = fullUrl.getParameterMap()
