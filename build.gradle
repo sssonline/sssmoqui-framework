@@ -71,8 +71,9 @@ task clean(type: Delete) { delete file(warName); delete file(execTempDir); delet
 task cleanTempDir(type: Delete) { delete file(execTempDir) }
 task cleanDb { doLast {
     if (!file(moquiRuntime).exists()) return
-    // with -Pconf pointing at a Postgres conf, reset the Postgres 'moqui' DB instead and leave the H2 files alone
+    // with -Pconf pointing at a Postgres conf, reset the local Postgres 'moqui' DB instead and leave the H2 files alone
     if (project.properties.containsKey('conf') && "${conf}".contains('Postgres')) {
+        if ("${conf}".contains('Production')) throw new GradleException("cleanDb refuses to reset a database for production conf ${conf}")
         exec { workingDir = projectDir; commandLine './cleanPostgres.sh' }
         delete fileTree(dir: moquiRuntime+'/txlog', include: '*')
         return
