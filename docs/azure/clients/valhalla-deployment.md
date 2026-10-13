@@ -40,7 +40,7 @@ VM D4as_v6 ~$135 · OS disk ~$20 · Postgres GP D2ds ~$130 · DB storage/backup 
 3. [ ] Spike: XA on Azure Postgres (`max_prepared_transactions`). Otherwise go non-XA
 4. [ ] Provision Azure (guide §3.1), with geo-redundant backup + private networking chosen at creation
 5. [ ] Release tagging across all repos + build of `moqui-plus-runtime.war`
-6. [ ] Dry-run install + data load on a throwaway DB, and time it
+6. [ ] Dry-run install + data load on a throwaway DB, and time it; build the Postgres root CA bundle and confirm `verify-full` connects (guide §3.2)
 7. [ ] Azure Files attachments verified (upload/download)
 8. [ ] ACS Email set up + domain verified; test password reset & invoice email
 9. [ ] Pause unused ServiceJobs (payroll, SFTP polling, Ziret demos)

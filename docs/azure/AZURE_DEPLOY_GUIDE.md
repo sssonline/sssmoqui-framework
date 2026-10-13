@@ -19,7 +19,7 @@ Status: **draft**. ❓ marks items that still need verification in the first dry
 | Housekeeping | Built-in daily cleanup: `ArtifactHit` kept 90 days, `ServiceJobRun` 30 days, `PrintJob` 7 days | `framework/data/MoquiSetupData.xml:58` |
 
 ### ⚠️ Security issues to fix before the first go-live
-- DB passwords and `entity_ds_crypt_pass` are committed in plain text in `runtime/conf/MoquiProductionConf*.xml`. Production secrets come from an env file or Key Vault. The **crypt-pass can never change once data is encrypted with it**: pick it once, store it in Key Vault plus the SSS password manager.
+- DB passwords and `entity_ds_crypt_pass` are committed in plain text in `runtime/conf/MoquiProductionConf*.xml`. Production secrets come from an env file or Key Vault. The **crypt-pass can never change once data is encrypted with it**: pick it once, store it in Key Vault plus the SSS password manager. Generate a **fresh crypt-pass per client** (e.g. `openssl rand -base64 32`); never reuse one that has been committed anywhere.
 - The `sentry.properties` DSN is committed with `environment=dev`. Set up a production environment and tag for each client.
 
 ## 1. Decision points (answer these per client, then record them in the client plan)
@@ -89,7 +89,7 @@ Default (D9): **plain JVM + systemd, with nginx in front**.
 ### 3.1 Provision (in this order)
 1. Resource group, VNet + subnets, NSG, Key Vault (soft-delete + purge protection).
 2. PostgreSQL Flexible Server: **private access in `snet-db`**, **geo-redundant backup ON**, 35-day retention, custom maintenance window (Sunday ~2am client time).
-   - Server params: `timezone=UTC` (Moqui's `default_time_zone` = client TZ), `max_prepared_transactions=100` (≥ Moqui pool size, needed for XA, static so restart), `require_secure_transport=ON`, `log_min_duration_statement=2000` (slow-query log), `idle_in_transaction_session_timeout=600000`.
+   - Server params: `timezone=UTC` (server default only; pgjdbc sets each session's zone from the JVM, which Moqui sets from `default_time_zone`), `max_prepared_transactions=100` (≥ Moqui pool size, needed for XA, static so restart), `require_secure_transport=ON`, `log_min_duration_statement=2000` (slow-query log), `idle_in_transaction_session_timeout=600000`.
    - Create DB `aspen` (UTF8) and a login `aspen_app` that owns it. ❓ **Spike: confirm `max_prepared_transactions` is settable.** If not, switch the datasource to non-XA `jdbc-uri` mode.
    - Moqui creates tables in the `public` schema by default. Fine for a single-tenant DB.
 3. VM: D4as_v6, Ubuntu 24.04, SSH key only.
@@ -103,6 +103,23 @@ sudo apt -y install nginx certbot python3-certbot-nginx unzip postgresql-client 
 sudo useradd -r -m -d /opt/aspen -s /usr/sbin/nologin aspen
 sudo timedatectl set-timezone UTC
 ```
+**Postgres TLS root CA bundle** (the prod conf uses `sslMode=verify-full` with `sslRootCert`). Microsoft's guidance for Java/Linux clients is to combine the Azure root CAs into one PEM ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/postgresql/security/security-tls-how-to-connect)); confirm the current list there before building it:
+```
+cd /tmp
+curl -fsSLO https://cacerts.digicert.com/DigiCertGlobalRootG2.crt.pem
+curl -fsSL "https://www.microsoft.com/pkiops/certs/Microsoft%20RSA%20Root%20Certificate%20Authority%202017.crt" \
+  | openssl x509 -inform der -out MicrosoftRSARoot2017.crt.pem
+curl -fsSLO https://cacerts.digicert.com/DigiCertGlobalRootCA.crt.pem   # G1: still listed for rotation extensions
+sudo install -d -o aspen -g aspen /opt/aspen/shared/conf
+cat DigiCertGlobalRootG2.crt.pem MicrosoftRSARoot2017.crt.pem DigiCertGlobalRootCA.crt.pem \
+  | sudo tee /opt/aspen/shared/conf/azure-postgres-root-ca.pem >/dev/null
+sudo chown aspen:aspen /opt/aspen/shared/conf/azure-postgres-root-ca.pem
+# verify: must print "Verify return code: 0 (ok)"
+openssl s_client -starttls postgres -connect <server>.postgres.database.azure.com:5432 \
+  -servername <server>.postgres.database.azure.com -CAfile /opt/aspen/shared/conf/azure-postgres-root-ca.pem </dev/null 2>/dev/null | grep "Verify return code"
+```
+Microsoft rotates these roots periodically; when they announce one, add the new root to the bundle **before** the cutover date and restart.
+
 Layout. Releases are swappable, while shared state survives deploys:
 ```
 /opt/aspen/
@@ -116,15 +133,15 @@ Each release symlinks `runtime/conf`, `runtime/log`, `runtime/txlog`, and `runti
 
 ### 3.3 New conf: `MoquiProductionConfPostgres.xml` (no secrets in it)
 Exists: `runtime/conf/MoquiProductionConfPostgres.xml` (secrets blank, supplied by env vars; launched by `prodPostgres.sh`). JDBC jar `runtime/lib/postgresql-42.7.13.jar` is in place. Values come from env vars in `aspen.env`:
-`entity_ds_db_conf=postgres`, `entity_ds_host=<server>.postgres.database.azure.com`, `entity_ds_port=5432`, `entity_ds_database=aspen`, `entity_ds_user`, `entity_ds_password`, `entity_ds_crypt_pass`, `instance_purpose=production`, `webapp_http_host=<domain>`, `webapp_https_enabled=true`, `webapp_client_ip_header=X-Real-IP`, `default_time_zone=<client tz>`. Keep `entity_on_start_load_types=seed,seed-initial,install`.
+`entity_ds_db_conf=postgres`, `entity_ds_host=<server>.postgres.database.azure.com`, `entity_ds_port=5432`, `entity_ds_database=aspen`, `entity_ds_user`, `entity_ds_password`, `entity_ds_crypt_pass`, `instance_purpose=production`, `webapp_http_host=<domain>`, `webapp_https_enabled=true`, `webapp_client_ip_header=X-Real-IP`, `default_time_zone=<client IANA tz>` **and** `database_time_zone=<same zone>`. Keep `entity_on_start_load_types=seed,seed-initial,install`.
 
 **Postgres settings the conf must keep (each one was found the hard way in local testing):**
 - `entity_ds_schema=public`. The framework default is `""`, and Postgres JDBC `getTables()` reads that as "no schema". On every restart after the first, Moqui then thinks no tables exist, tries to recreate all 644, and the error flood deadlocks log4j during startup.
 - `stringType="unspecified"` on the datasource `xa-properties`. Moqui binds string condition values (`econdition value="0"`) with `setString()` for any column type (`FieldInfo.java:478`). Postgres rejects `numeric > character varying` unless the driver sends strings untyped. Without it, 53 of 152 Aspen tests failed.
-- `default_time_zone` / `database_time_zone` = `America/Los_Angeles` (or the client's IANA zone). The framework default `US/Pacific` is a legacy alias that Postgres 17 rejects at connect time.
-- `sslMode="require"` (prod; Azure enforces TLS).
+- **Set both** `default_time_zone` **and** `database_time_zone` in `aspen.env`, to the **same** IANA zone (e.g. `America/Los_Angeles`, `America/Denver`). The prod conf defaults both to `America/Los_Angeles`; overriding only one makes the JVM/session zone and the zone Moqui uses to bind timestamps disagree, so stored times drift hours from `CURRENT_DATE` in raw SQL (aging buckets, `daysOut`). Don't remove them either: the framework default `US/Pacific` is a legacy alias that Postgres 17 rejects at connect time.
+- `sslMode="verify-full"` + `sslRootCert` (prod): encrypts **and** verifies the server cert chains to an Azure root and matches `entity_ds_host`, so a spoofed/misrouted DB endpoint can't collect the password. `require` would encrypt but accept any certificate. Bundle path: `entity_ds_ssl_root_cert` (default `/opt/aspen/shared/conf/azure-postgres-root-ca.pem`).
 
-Local check before every release: `gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml` (Docker/Colima running). With a Postgres conf, `cleanDb` resets the Postgres DB via `cleanPostgres.sh` and leaves H2 alone.
+Local check before every release: `gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml` (Docker/Colima running). With a Postgres dev conf, `cleanDb` resets the **local** Postgres DB via `cleanPostgres.sh` (always 127.0.0.1, ignores `PG*` env vars) and leaves H2 alone; it refuses any conf whose name contains `Production`.
 
 ### 3.4 systemd `/etc/systemd/system/aspen.service`
 ```
@@ -132,6 +149,9 @@ Local check before every release: `gradle cleanPullCompTest -Pconf=conf/MoquiDev
 User=aspen
 WorkingDirectory=/opt/aspen/current
 EnvironmentFile=/opt/aspen/aspen.env
+# refuse to start if a secret is missing (a blank crypt pass would otherwise only fail at first encrypt/decrypt)
+ExecStartPre=/bin/bash -c 'for v in entity_ds_host entity_ds_user entity_ds_password entity_ds_crypt_pass default_time_zone database_time_zone; do [ -n "${!v}" ] || { echo "aspen.env missing $v"; exit 1; }; done'
+ExecStartPre=/usr/bin/test -r /opt/aspen/shared/conf/azure-postgres-root-ca.pem
 ExecStart=/usr/bin/java -server -Xms4g -Xmx8g -XX:+UseG1GC -XX:-OmitStackTraceInFastThrow -Djava.awt.headless=true \
   -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/aspen/shared/log \
   -cp . MoquiStart port=8080 conf=conf/MoquiProductionConfPostgres.xml
@@ -139,7 +159,15 @@ Restart=on-failure
 TimeoutStartSec=600
 LimitNOFILE=65536
 ```
-Moqui listens on 127.0.0.1:8080. nginx terminates TLS (`certbot --nginx`, auto-renew) and proxies with `X-Real-IP`, `X-Forwarded-Proto https`, and `client_max_body_size 50m`. fail2ban watches nginx for login floods.
+⚠️ **Moqui's Jetty binds 8080 on all interfaces** (`MoquiStart.java` sets only the port, never the host), so the VM firewall must close it; otherwise anything that can reach the VM bypasses nginx and can forge `X-Real-IP` (defeats login lockout, pollutes audit/visit data):
+```
+sudo ufw default deny incoming
+sudo ufw allow from <SSS office IP> to any port 22 proto tcp
+sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+sudo ufw enable        # 8080 stays closed to everything but loopback (nginx)
+sudo ufw status verbose
+```
+Keep the NSG equally tight (no inbound 8080), so a loosened rule in one place isn't enough on its own. nginx terminates TLS (`certbot --nginx`, auto-renew) and proxies with `X-Real-IP`, `X-Forwarded-Proto https`, and `client_max_body_size 50m`. fail2ban watches nginx for login floods.
 
 ### 3.5 First data load
 Load `seed,seed-initial,install` (no demo) against the Azure DB from the VM, then client setup (org, chart of accounts, fiscal periods, users), then opening balances (D3). **Do a full dry run first** on a throwaway DB, and time it.
