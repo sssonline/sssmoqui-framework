@@ -71,6 +71,12 @@ task clean(type: Delete) { delete file(warName); delete file(execTempDir); delet
 task cleanTempDir(type: Delete) { delete file(execTempDir) }
 task cleanDb { doLast {
     if (!file(moquiRuntime).exists()) return
+    // with -Pconf pointing at a Postgres conf, reset the Postgres 'moqui' DB instead and leave the H2 files alone
+    if (project.properties.containsKey('conf') && "${conf}".contains('Postgres')) {
+        exec { workingDir = projectDir; commandLine './cleanPostgres.sh' }
+        delete fileTree(dir: moquiRuntime+'/txlog', include: '*')
+        return
+    }
     delete files(file(moquiRuntime+'/db/derby').listFiles()) - files(moquiRuntime+'/db/derby/derby.properties')
     delete file(moquiRuntime+'/db/h2')
     delete file(moquiRuntime+'/db/orientdb/databases')
@@ -649,8 +655,10 @@ task load(type: JavaExec) {
     systemProperties = ['moqui.conf':moquiConfDev, 'moqui.runtime':moquiRuntime]
     environment 'LOAD_DELAY_INDEX_ON_CREATE', 'true'
     workingDir = '.'; jvmArgs = ['-server', '-XX:+UseG1GC']; main = '-jar'
-    args = [warName, 'load', (project.properties.containsKey('types') ? "types=${types}" : "types=all")]
-    if (project.properties.containsKey('conf')) args.add("conf=${conf}")
+    // build the list before assigning: args.add() after assignment is silently dropped, so -Pconf was ignored
+    def argList = [warName, 'load', (project.properties.containsKey('types') ? "types=${types}" : "types=all")]
+    if (project.properties.containsKey('conf')) argList.add("conf=${conf}")
+    args = argList
 }
 task loadSeed(type: JavaExec) {
     dependsOn checkRuntime, allBuildTasks
