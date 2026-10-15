@@ -784,10 +784,76 @@ task deployTomcat { doLast {
     copy { from file(warName); into file(tomcatHome + '/webapps'); rename(warName, 'ROOT.war') }
 } }
 
+// runtime/conf files allowed into a deploy WAR; every other conf (dev, payroll, MySQL, etc.) stays out of it.
+// Override per build with -PwarConfs=A.xml,B.xml; -PwarConfsAllowSecrets=true turns the literal-secret check into a warning.
+def defaultWarConfs = 'MoquiProductionConf.xml,MoquiProductionConfPostgres.xml'
+// A deploy WAR is a production build by default: dev-only runtime folders stay out of it (dev component, local H2 DB and
+// its data-export snapshots, the dev transaction journal, the unused ElasticSearch folder), so a release build is just
+// 'gradle cleanAllButDb build addRuntime'. -Pproduction=false puts them back.
+def productionWarExcludes = ['/component/aspendev/**', '/db/h2/**', '/db/snapshot/**', '/txlog/**', '/elasticsearch/**']
+List<String> checkWarConfs(File confDir, String warConfsProp, boolean allowSecrets) {
+    List<String> warConfs = warConfsProp.split(',')*.trim().findAll { it }
+    if (!warConfs) throw new GradleException("-PwarConfs lists no conf files")
+    for (String name in warConfs) {
+        if (name.contains('/') || name.contains('\\')) throw new GradleException("-PwarConfs entry ${name} must be a file name in ${confDir}, not a path")
+        if (!new File(confDir, name).exists()) throw new GradleException("-PwarConfs entry ${name} not found in ${confDir}")
+    }
+
+    // the conf the WAR starts with by default (WebSphere has no command line to pass conf=) must be in the WAR
+    Properties initProps = new Properties()
+    file('MoquiInit.properties').withInputStream { initProps.load(it) }
+    String initConf = initProps.getProperty('moqui.conf')
+    if (initConf?.startsWith('conf/') && !warConfs.contains(initConf.substring(5)))
+        throw new GradleException("MoquiInit.properties moqui.conf=${initConf} is not in the WAR conf list ${warConfs}; add it with -PwarConfs")
+
+    // a password or key typed into a conf must not ship; values have to come from ${...} (env vars / system properties)
+    List<String> findings = []
+    for (String name in warConfs) {
+        File confFile = new File(confDir, name)
+        List<String> lines = confFile.readLines()
+        Closure<String> lineOf = { String text -> int i = lines.findIndexOf { it.contains(text) }; i >= 0 ? (i + 1).toString() : '?' }
+        Node root = new XmlParser(false, false).parse(confFile)
+        root.depthFirst().findAll { it instanceof Node }.each { Node node ->
+            String nodeName = node.name().toString()
+            if (nodeName == 'default-property') {
+                String propName = node.attribute('name') ?: ''
+                String isSecretAttr = node.attribute('is-secret')
+                // same rule ExecutionContextFactoryImpl uses to treat a default-property as secret
+                boolean isSecret = isSecretAttr != 'false' && (isSecretAttr == 'true' || propName.contains('pass') ||
+                        propName.contains('pw') || propName.contains('key'))
+                String value = node.attribute('value') ?: ''
+                if (isSecret && value && !value.startsWith('${'))
+                    findings.add("${name}:${lineOf('name="' + propName + '"')} default-property ${propName} has a literal value")
+            } else {
+                node.attributes().each { attrName, attrValue ->
+                    String value = attrValue?.toString() ?: ''
+                    if (attrName.toString().toLowerCase().contains('pass') && value && !value.startsWith('${'))
+                        findings.add("${name}:${lineOf(attrName.toString() + '="' + value + '"')} ${nodeName}@${attrName} has a literal value")
+                }
+            }
+        }
+    }
+    if (findings) {
+        String msg = "Literal secrets in WAR confs (use \${...} placeholders supplied by env vars):\n  " + findings.join('\n  ')
+        if (!allowSecrets) throw new GradleException(msg + "\nTo ship them anyway pass -PwarConfsAllowSecrets=true")
+        logger.warn("WARNING: -PwarConfsAllowSecrets=true, shipping anyway. " + msg)
+    }
+    return warConfs
+}
+
 task plusRuntimeWarTemp {
     dependsOn checkRuntime, allBuildTasks
 
     doLast {
+        // check the conf list first so a bad list fails before anything is assembled
+        List<String> warConfs = checkWarConfs(file(moquiRuntime + '/conf'), (project.findProperty('warConfs') ?: defaultWarConfs).toString(),
+                project.findProperty('warConfsAllowSecrets')?.toString() == 'true')
+        logger.lifecycle("Deploy WAR runtime/conf: ${warConfs.join(', ')}")
+        boolean production = project.findProperty('production')?.toString() != 'false'
+        List<String> devExcludes = production ? productionWarExcludes.collect { moquiRuntime + it } : []
+        if (production) logger.lifecycle("Production WAR, leaving out: ${devExcludes.join(', ')} (-Pproduction=false to include them)")
+        else logger.warn("WARNING: -Pproduction=false, dev-only runtime folders (${productionWarExcludes.collect { moquiRuntime + it }.join(', ')}) go into the WAR")
+
         File wartempFile = file('wartemp')
         if (wartempFile.exists()) delete wartempFile
 
@@ -798,9 +864,12 @@ task plusRuntimeWarTemp {
         // copy runtime directory (with a few exceptions) into a runtime directory in the war
         copy {
             from fileTree(dir: '.', include: moquiRuntime+'/**',
-                    excludes: ['**/*.jar', '**/build', moquiRuntime+'/classes/**', moquiRuntime+'/lib/**', moquiRuntime+'/log/**', moquiRuntime+'/sessions/**'])
+                    excludes: ['**/*.jar', '**/build', moquiRuntime+'/classes/**', moquiRuntime+'/lib/**', moquiRuntime+'/log/**', moquiRuntime+'/sessions/**',
+                               moquiRuntime+'/conf/**'] + devExcludes)
             into wartempFile
         }
+        // only the allowlisted confs go into the WAR (checked above)
+        copy { from fileTree(dir: moquiRuntime+'/conf', includes: warConfs); into "wartemp/${moquiRuntime}/conf" }
         // copy the jar files from runtime/lib
         copy { from fileTree(dir: moquiRuntime+'/lib', include: '**/*.jar').files into 'wartemp/WEB-INF/lib' }
         // copy the classpath resource files from runtime/classes
@@ -808,7 +877,7 @@ task plusRuntimeWarTemp {
         // copy the jar files from components
         copy { from fileTree(dir: moquiRuntime+'/base-component', include: '**/*.jar').files into 'wartemp/WEB-INF/lib' }
         copy {
-            from fileTree(dir: moquiRuntime+'/component', include: '**/*.jar', exclude: '**/librepo/*.jar').files
+            from fileTree(dir: moquiRuntime+'/component', include: '**/*.jar', excludes: ['**/librepo/*.jar'] + (production ? ['aspendev/**'] : [])).files
             into 'wartemp/WEB-INF/lib'
             duplicatesStrategy DuplicatesStrategy.WARN
         }

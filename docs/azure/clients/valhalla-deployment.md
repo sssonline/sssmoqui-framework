@@ -36,7 +36,7 @@ VM D4as_v6 ~$135 · OS disk ~$20 · Postgres GP D2ds ~$130 · DB storage/backup 
 
 ## Pre-go-live work (SSS)
 1. [ ] **Postgres readiness**: add the JDBC jar + `devPostgres.sh`, run the Aspen/Basalt test suites on Postgres, fix dialect bugs (`daysOut` fix in progress; see the dialect-risk list)
-2. [x] `MoquiProductionConfPostgres.xml` + `prodPostgres.sh` created (secrets via env vars; align with the programmer's password-removal approach)
+2. [x] `MoquiProductionConfPostgres.xml` + `prodPostgres.sh` created (secrets via env vars). Aligned with the prod credentials card ([Trello](https://trello.com/c/BfaA2YNv)): same env-var mechanism for Saticoy, deploy WAR packs only allowlisted secret-free confs, conf ships inside each release (guide §3.2)
 3. [ ] Spike: XA on Azure Postgres (`max_prepared_transactions`). Otherwise go non-XA
 4. [ ] Provision Azure (guide §3.1), with geo-redundant backup + private networking chosen at creation
 5. [ ] Release tagging across all repos + build of `moqui-plus-runtime.war`

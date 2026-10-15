@@ -19,7 +19,7 @@ Status: **draft**. ❓ marks items that still need verification in the first dry
 | Housekeeping | Built-in daily cleanup: `ArtifactHit` kept 90 days, `ServiceJobRun` 30 days, `PrintJob` 7 days | `framework/data/MoquiSetupData.xml:58` |
 
 ### ⚠️ Security issues to fix before the first go-live
-- DB passwords and `entity_ds_crypt_pass` are committed in plain text in `runtime/conf/MoquiProductionConf*.xml`. Production secrets come from an env file or Key Vault. The **crypt-pass can never change once data is encrypted with it**: pick it once, store it in Key Vault plus the SSS password manager. Generate a **fresh crypt-pass per client** (e.g. `openssl rand -base64 32`); never reuse one that has been committed anywhere.
+- DB passwords and `entity_ds_crypt_pass` were committed in plain text in `runtime/conf/MoquiProductionConf*.xml`, and every deploy WAR carried all of `runtime/conf`. Production secrets now come from environment variables (`aspen.env` here, WebSphere environment entries for Saticoy); the Postgres and Saticoy prod confs only hold `${...}` placeholders. `addRuntime` packs only an allowlist of confs into the WAR and fails the build on a literal secret (§5, [Trello card](https://trello.com/c/BfaA2YNv)). The old Saticoy password is still in git history until it's changed. The **crypt-pass can never change once data is encrypted with it**: pick it once, store it in Key Vault plus the SSS password manager. Generate a **fresh crypt-pass per client** (e.g. `openssl rand -base64 32`); never reuse one that has been committed anywhere.
 - The `sentry.properties` DSN is committed with `environment=dev`. Set up a production environment and tag for each client.
 
 ## 1. Decision points (answer these per client, then record them in the client plan)
@@ -99,7 +99,9 @@ Default (D9): **plain JVM + systemd, with nginx in front**.
 ```
 sudo apt update && sudo apt -y upgrade
 sudo apt -y install nginx certbot python3-certbot-nginx unzip postgresql-client fail2ban unattended-upgrades cifs-utils
-# Java: Temurin 21 LTS (code targets 11; devs run 23) ❓ confirm in dry run
+# Java: Temurin 11 LTS (what the code targets). Temurin 21 does NOT start Moqui as-is: Bitronix's javassist JDBC
+# proxies need --add-opens=java.base/java.lang=ALL-UNNAMED on Java 17+ (found in the local Azure emulation, Oct 2026;
+# upstream Moqui's java17 branch needs the same flag and was reverted to Java 11). 21 is otherwise untested.
 sudo useradd -r -m -d /opt/aspen -s /usr/sbin/nologin aspen
 sudo timedatectl set-timezone UTC
 ```
@@ -123,13 +125,13 @@ Microsoft rotates these roots periodically; when they announce one, add the new 
 Layout. Releases are swappable, while shared state survives deploys:
 ```
 /opt/aspen/
-  releases/2026-11-01_prod-2026.11.01/   ← unzipped moqui-plus-runtime.war
+  releases/2026-11-01_prod-2026.11.01/   ← unzipped moqui-plus-runtime.war (includes runtime/conf/MoquiProductionConfPostgres.xml)
   current -> releases/2026-11-01_prod-2026.11.01
-  shared/conf/MoquiProductionConfPostgres.xml
+  shared/conf/azure-postgres-root-ca.pem  ← Postgres TLS root CA bundle (absolute path, see above)
   shared/log  shared/txlog  shared/sessions
   aspen.env                               ← secrets (chmod 600), loaded by systemd
 ```
-Each release symlinks `runtime/conf`, `runtime/log`, `runtime/txlog`, and `runtime/sessions` → `shared/`.
+Each release symlinks `runtime/log`, `runtime/txlog`, and `runtime/sessions` → `shared/`. **`runtime/conf` is not linked**: the conf ships inside each release. It has no secrets (they are all in `aspen.env`), and the WAR build refuses a conf with a literal secret, so a release always runs with the conf it was built with and a rollback restores the matching conf. Never hand-edit a release's conf; change `runtime/conf` in git and build a new release.
 
 ### 3.3 New conf: `MoquiProductionConfPostgres.xml` (no secrets in it)
 Exists: `runtime/conf/MoquiProductionConfPostgres.xml` (secrets blank, supplied by env vars; launched by `prodPostgres.sh`). JDBC jar `runtime/lib/postgresql-42.7.13.jar` is in place. Values come from env vars in `aspen.env`:
@@ -200,8 +202,10 @@ Default (D10): prod only, deploy off-hours. The trade-off is that **every releas
 
 **Pin versions.** Aspen is ~13 git repos. `gitPullAll` grabs HEAD, so a release has to record each repo's commit. Tag them all the same (e.g. `prod-2026.11.01`) and keep a `RELEASE.txt` manifest in the war.
 
-1. **Build** (dev Mac now, GitHub Actions later): check out the tag in every repo → `./gradlew cleanAll build addRuntime` → `moqui-plus-runtime.war`. Tests pass on Postgres.
-2. **Upload**: `scp` to `/opt/aspen/releases/`, unzip into a new folder, create the `shared/` symlinks.
+1. **Build** (dev Mac now, GitHub Actions later): check out the tag in every repo → `./gradlew cleanAllButDb build addRuntime` → `moqui-plus-runtime.war`. Tests pass on Postgres.
+   - Only an allowlist of `runtime/conf` files goes into the WAR: by default `MoquiProductionConf.xml` (Saticoy) and `MoquiProductionConfPostgres.xml`. Change it per build with `-PwarConfs=A.xml,B.xml`. The build fails if a listed file is missing, if the conf in `MoquiInit.properties` isn't listed, or if a listed conf has a literal password/key (`-PwarConfsAllowSecrets=true` makes that a warning; don't use it for a client release).
+   - `addRuntime` builds a production WAR by default: it leaves out the dev-only `runtime/component/aspendev`, the local H2 database (`runtime/db/h2`) and its snapshots (`runtime/db/snapshot`), the dev transaction journal (`runtime/txlog`) and the unused `runtime/elasticsearch`. So `cleanAllButDb` is enough (no H2 backup/restore, nothing to move aside). `-Pproduction=false` puts those folders back (never for a client release).
+2. **Upload**: `scp` to `/opt/aspen/releases/`, unzip into a new folder, create the `shared/` symlinks (`log`, `txlog`, `sessions`; not `conf`).
 3. **Pre-deploy backup**: on-demand Flexible Server backup, and note the timestamp.
 4. **Switch**: notify users → `systemctl stop aspen` → repoint `current` → `systemctl start aspen` → tail the log until it's started → smoke test (login, open an order, print an invoice).
 5. **Rollback**: repoint `current` back and restart. Moqui only *adds* tables and columns, so old code runs on the newer schema. A bad data migration → PITR to the step-3 time.
