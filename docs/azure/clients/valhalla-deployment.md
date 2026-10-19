@@ -25,11 +25,11 @@ Follows `docs/azure/AZURE_DEPLOY_GUIDE.md`. This file records only this client's
 VM D4as_v6 ~$135 · OS disk ~$20 · Postgres GP D2ds ~$130 · DB storage/backup ~$15 · Azure Files ~$5 · Backup ~$15 · IP/KV/ACS ~$6 → **~$325 PAYG, ~$220 with 1-yr reservations**.
 
 ## Open questions (ask the client or decide internally)
-- [ ] Who on Valhalla's side is the IT contact
+- [x] IT contact: **SSS is Valhalla's IT** (they have no IT staff). So DNS, email sender setup, user accounts and support all land on us
 - [ ] D3: exactly what comes over at go-live (GL trial balance as of cutover date? open AR invoices? open AP? inventory on hand + cost?) and from what system/format
-- [ ] D14: our subdomain or theirs? Who sends email "from" (`billing@theirdomain.com` needs their DNS for SPF/DKIM)
+- [ ] D14: our subdomain or theirs? Since we're their IT: do we already have access to their domain registrar/DNS? If so, using their domain is easy (we add the A record + ACS SPF/DKIM records ourselves); if not, get the login before setup. Who sends email "from" (e.g. `billing@theirdomain.com`)?
 - [ ] Integrations: payment gateway? EDI with any trading partners? bank feeds? (each adds outbound/inbound network rules)
-- [ ] Printers: do they print invoices/pick tickets/labels from Aspen (browser PDF is fine; direct printer integration isn't)
+- [x] Printers: no direct printer integration; printing is browser PDF
 - [ ] Business hours → maintenance/deploy window (proposal: Sun 2–5am PT)
 - [ ] Who at SSS holds production access (SSH keys, Azure RBAC), plus a break-glass account
 - [ ] Budget sign-off on ~$220–325/mo
