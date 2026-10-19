@@ -50,12 +50,60 @@ class TransactionInternalBitronix implements TransactionInternal {
         this.ecfi = (ExecutionContextFactoryImpl) ecf
 
         // NOTE: see the bitronix-default-config.properties file for more config
+        checkServerId()
 
         btm = TransactionManagerServices.getTransactionManager()
         this.ut = btm
         this.tm = btm
 
         return this
+    }
+
+    /** Bitronix stamps every transaction ID with the server ID and, on restart, recovers the unfinished transactions in its
+     * journal (runtime/txlog) that carry that ID, so each instance needs an ID that differs from every other instance sharing
+     * the database and stays with its own journal. Without one Bitronix falls back to the machine's IP address, which
+     * several Aspen servers on one IBM i (or a rebuilt Azure VM or container) share or lose. So no instance needs setup:
+     * the first start generates an ID and saves it beside the journal in txlog/server-id, and later starts reuse it. A
+     * -Dbitronix.tm.serverId=... JVM option (or bitronix.tm.serverId in the properties file) still overrides it. */
+    protected static void checkServerId() {
+        bitronix.tm.Configuration btmConfig = TransactionManagerServices.getConfiguration()
+        String serverId = btmConfig.getServerId()
+        String source = "bitronix.tm.serverId"
+        if (!serverId) {
+            File idFile = new File(new File(btmConfig.getLogPart1Filename()).getAbsoluteFile().getParentFile(), "server-id")
+            try {
+                if (idFile.exists()) serverId = idFile.getText("US-ASCII").trim()
+                if (!serverId) {
+                    serverId = makeServerId()
+                    idFile.getParentFile().mkdirs()
+                    idFile.setText(serverId + "\n", "US-ASCII")
+                    logger.info("Generated a Bitronix server ID for this instance and saved it in ${idFile.path}")
+                }
+                btmConfig.setServerId(serverId)
+                source = idFile.path
+            } catch (Exception e) {
+                logger.warn("Could not read or save the Bitronix server ID in ${idFile.path}, so Bitronix will use the IP address, which is unsafe " +
+                        "when several instances share a machine or the IP changes. Make that directory writable, or set -Dbitronix.tm.serverId " +
+                        "for this instance: ${e}")
+                return
+            }
+        }
+        boolean ascii = true
+        for (int i = 0; i < serverId.length(); i++) if (serverId.charAt(i) > (char) 127) { ascii = false; break }
+        if (!ascii || serverId.length() > 51) {
+            logger.warn("Bitronix server ID '${serverId}' must be US-ASCII and at most 51 characters; Bitronix will truncate or replace it. Set a shorter ID in ${source}.")
+        }
+        logger.info("Bitronix transaction manager server ID: ${serverId} (from ${source})")
+    }
+    /** aspen-<short host name>-<8 random hex digits>: unique per instance even when several share a host, at most 45 characters */
+    protected static String makeServerId() {
+        String host = ""
+        try { host = InetAddress.getLocalHost().getHostName() } catch (Exception e) { logger.trace("No local host name for the Bitronix server ID", e) }
+        host = host.split("\\.")[0].replaceAll("[^A-Za-z0-9-]", "").toLowerCase()
+        if (host.length() > 30) host = host.substring(0, 30)
+        byte[] random = new byte[4]
+        new java.security.SecureRandom().nextBytes(random)
+        return "aspen-" + (host ?: "host") + "-" + random.encodeHex().toString()
     }
 
     @Override

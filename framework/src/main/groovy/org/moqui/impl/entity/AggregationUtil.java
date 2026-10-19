@@ -142,7 +142,17 @@ public class AggregationUtil {
                 }
             }
         }
-        if (totalsMap.size() > 0) resultList.add(new HashMap<>(totalsMap));
+        if (totalsMap.size() > 0) {
+            // sssonline local patch (Simple Report #1154): mark the totals row so a screen can label it ("Page Total")
+            Map<String, Object> totalsRow = new HashMap<>(totalsMap);
+            totalsRow.put("_isTotalsRow", Boolean.TRUE);
+            // a screen can label the totals row by naming the field (column) to put the label in, e.g. "Page Total"
+            Object labelField = eci.contextStack.get("formListTotalsLabelField");
+            Object labelText = eci.contextStack.get("formListTotalsLabel");
+            if (labelField instanceof String && labelText != null && totalsRow.get(labelField) == null)
+                totalsRow.put((String) labelField, labelText.toString());
+            resultList.add(totalsRow);
+        }
 
         if (logger.isTraceEnabled()) logger.trace("Processed list " + listName + ", from " + originalCount + " items to " + resultList.size() + " items, in " + (System.currentTimeMillis() - startTime) + "ms");
         // for (Map<String, Object> result : resultList) logger.warn("Aggregate Result: " + result.toString());

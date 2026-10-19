@@ -177,6 +177,9 @@ class EntityDataDocument {
             AtomicInteger incrementer = new AtomicInteger()
             fieldTree.put("_ALIAS", "PRIM")
             addDataDocRelatedEntity(dynamicView, "PRIM", fieldTree, incrementer, makeDdfByAlias(dataDocumentFieldList))
+            // sssonline local patch (Simple Report #1158): the aliases above come out grouped by relationship; put them back
+            // in DataDocumentField sequenceNum order so form-list columns, CSV, XLSX and JSON follow the report's Seq order
+            orderAliasesBySequence(dynamicView.entityNode, dataDocumentFieldList)
             // logger.warn("=========== ${dataDocumentId} fieldTree=${fieldTree}")
             // logger.warn("=========== ${dataDocumentId} fieldAliasPathMap=${fieldAliasPathMap}")
 
@@ -220,24 +223,41 @@ class EntityDataDocument {
         // add conditions
         if (ddi.dataDocumentConditionList != null && ddi.dataDocumentConditionList.size() > 0) {
             ExecutionContextImpl eci = efi.ecfi.getEci()
+            EntityConditionFactoryImpl ecf = efi.getConditionFactoryImpl()
+            // sssonline local patch (Simple Report #1157): Match Any joins the ordinary filters with OR; filters on a
+            // summarized column (HAVING) always all apply; Ask When Run filters are left out of the saved report, and
+            // the screen that runs it supplies their values (see makeRunCondition). A document with neither setting,
+            // including every shipped search and feed document, runs exactly as before.
+            boolean matchAny = "Y".equals(ddi.dataDocument.getNoCheckSimple("matchAny"))
+            List<EntityCondition> whereCondList = new ArrayList<>()
             int dataDocumentConditionListSize = ddi.dataDocumentConditionList.size()
             for (int ddci = 0; ddci < dataDocumentConditionListSize; ddci++) {
                 EntityValue dataDocumentCondition = (EntityValue) ddi.dataDocumentConditionList.get(ddci)
                 String fieldAlias = (String) dataDocumentCondition.getNoCheckSimple("fieldNameAlias")
                 FieldInfo fi = ed.getFieldInfo(fieldAlias)
                 if (fi == null) throw new EntityException("Found DataDocument Condition with alias [${fieldAlias}] that is not aliased in DataDocument ${ddi.dataDocumentId}")
-                if (dataDocumentCondition.getNoCheckSimple("postQuery") != "Y") {
-                    String operator = ((String) dataDocumentCondition.getNoCheckSimple("operator")) ?: 'equals'
-                    String toFieldAlias = (String) dataDocumentCondition.getNoCheckSimple("toFieldNameAlias")
-                    if (toFieldAlias != null && !toFieldAlias.isEmpty()) {
-                        mainFind.conditionToField(fieldAlias, EntityConditionFactoryImpl.stringComparisonOperatorMap.get(operator), toFieldAlias)
-                    } else {
-                        String stringVal = (String) dataDocumentCondition.getNoCheckSimple("fieldValue")
-                        Object objVal = fi.convertFromString(stringVal, eci.l10nFacade)
-                        mainFind.condition(fieldAlias, operator, objVal)
-                    }
+                if (dataDocumentCondition.getNoCheckSimple("postQuery") == "Y") continue
+                if ("Y".equals(dataDocumentCondition.getNoCheckSimple("askWhenRun"))) continue
+
+                String operator = ((String) dataDocumentCondition.getNoCheckSimple("operator")) ?: 'equals'
+                EntityCondition.ComparisonOperator opObj = EntityConditionFactoryImpl.stringComparisonOperatorMap.get(operator)
+                if (opObj == null) throw new EntityException("Operator [${operator}] is not a valid field comparison operator")
+                String toFieldAlias = (String) dataDocumentCondition.getNoCheckSimple("toFieldNameAlias")
+                if (toFieldAlias != null && !toFieldAlias.isEmpty()) {
+                    // compare-to-column filters always go in WHERE, as before
+                    whereCondList.add(ecf.makeConditionToField(fieldAlias, opObj, toFieldAlias))
+                } else {
+                    String stringVal = (String) dataDocumentCondition.getNoCheckSimple("fieldValue")
+                    // sssonline local patch (Simple Report #1158): comma lists and whole-day dates
+                    EntityCondition valueCond = makeDocValueCondition(ddi.dataDocumentId, fi, fieldAlias, operator, stringVal, eci)
+                    if (valueCond == null) valueCond = new FieldValueCondition(fi.conditionField, opObj, fi.convertFromString(stringVal, eci.l10nFacade))
+                    // same WHERE vs HAVING routing as EntityFindBase.condition(String, ComparisonOperator, Object)
+                    if (ed.isViewEntity && fi.fieldNode.attribute("function")) mainFind.havingCondition(valueCond)
+                    else whereCondList.add(valueCond)
                 }
             }
+            if (whereCondList.size() == 1) mainFind.condition(whereCondList.get(0))
+            else if (whereCondList.size() > 1) mainFind.condition(ecf.makeCondition(whereCondList, matchAny ? EntityCondition.OR : EntityCondition.AND))
         }
 
         // create a condition with an OR list of date range comparisons to check that at least one member-entity has lastUpdatedStamp in range
@@ -663,6 +683,142 @@ class EntityDataDocument {
         }
     }
 
+    /** sssonline local patch (Simple Report #1158): reorder the dynamic view's alias nodes to follow dataDocumentFieldList,
+     * which is ordered by sequenceNum then fieldPath. Aliases not from a field (none today) keep their place at the end. */
+    static void orderAliasesBySequence(MNode viewNode, EntityList dataDocumentFieldList) {
+        Map<String, EntityValue> ddfByAlias = makeDdfByAlias(dataDocumentFieldList)
+        Map<String, Integer> positionByAlias = new HashMap<>()
+        int ddfSize = dataDocumentFieldList.size()
+        for (int i = 0; i < ddfSize; i++) {
+            EntityValue ddf = (EntityValue) dataDocumentFieldList.get(i)
+            for (Map.Entry<String, EntityValue> entry in ddfByAlias.entrySet()) {
+                if (entry.getValue().is(ddf)) { positionByAlias.put(entry.getKey(), i); break }
+            }
+        }
+        ArrayList<MNode> aliasNodes = new ArrayList<>(viewNode.children("alias"))
+        if (aliasNodes.size() < 2) return
+        // List.sort is stable, so aliases with no field (none today) stay last in their current order
+        ArrayList<MNode> sorted = new ArrayList<>(aliasNodes)
+        sorted.sort(new Comparator<MNode>() {
+            @Override int compare(MNode a, MNode b) {
+                Integer pa = positionByAlias.get(a.attribute("name"))
+                Integer pb = positionByAlias.get(b.attribute("name"))
+                return Integer.compare(pa != null ? pa.intValue() : Integer.MAX_VALUE, pb != null ? pb.intValue() : Integer.MAX_VALUE)
+            }
+        })
+        viewNode.remove("alias")
+        for (MNode aliasNode in sorted) viewNode.append(aliasNode)
+    }
+
+    /** sssonline local patch (Simple Report #1157): the condition for one Ask When Run value supplied when the report
+     * runs, parsed exactly like a saved filter (comma lists, whole-day dates). The caller adds it to the find, in
+     * HAVING when isHavingField is true. Returns null when the value is blank (the filter is not applied). */
+    EntityCondition makeRunCondition(String dataDocumentId, String fieldAlias, String operator, String value) {
+        if (value == null || value.trim().isEmpty()) return null
+        EntityDefinition ed = efi.getEntityDefinition("DataDocument." + dataDocumentId)
+        FieldInfo fi = ed?.getFieldInfo(fieldAlias)
+        if (fi == null) throw new EntityException("Report filter on ${fieldAlias} refers to a column that is not in report ${dataDocumentId}")
+        String op = operator ?: "equals"
+        EntityCondition.ComparisonOperator opObj = EntityConditionFactoryImpl.stringComparisonOperatorMap.get(op)
+        if (opObj == null) throw new EntityException("Operator [${op}] is not a valid field comparison operator")
+        ExecutionContextImpl eci = efi.ecfi.getEci()
+        EntityCondition cond = makeDocValueCondition(dataDocumentId, fi, fieldAlias, op, value, eci)
+        if (cond == null) cond = new FieldValueCondition(fi.conditionField, opObj, fi.convertFromString(value.trim(), eci.l10nFacade))
+        return cond
+    }
+    /** sssonline local patch (Simple Report #1157): true when the column is summarized, so its filters go in HAVING */
+    boolean isHavingField(String dataDocumentId, String fieldAlias) {
+        EntityDefinition ed = efi.getEntityDefinition("DataDocument." + dataDocumentId)
+        FieldInfo fi = ed?.getFieldInfo(fieldAlias)
+        return fi != null && ed.isViewEntity && fi.fieldNode.attribute("function")
+    }
+
+    static final Set<String> docListOperators = new HashSet<>(["in", "not-in", "between", "not-between"])
+    static final Set<String> docDayOperators = new HashSet<>(["equals", "not-equals", "less", "less-equals", "greater", "greater-equals"])
+
+    /** sssonline local patch (Simple Report #1158). Returns null to leave the condition to the stock handling.
+     * - in, not-in, between, not-between: the value is split on commas first, spaces around each value are ignored, and
+     *   each value is converted to the field type (number values are typed without thousands separators); between needs
+     *   exactly two values
+     * - a date-only value on a date-time field covers the whole day in the user's time zone, matching the Search
+     *   Options date range: equals/not-equals match/exclude the day, less-equals and the end of between include it,
+     *   greater excludes it, greater-equals and the start of between start at midnight */
+    EntityCondition makeDocValueCondition(String dataDocumentId, FieldInfo fi, String fieldAlias, String operator,
+                                          String stringVal, ExecutionContextImpl eci) {
+        boolean isList = docListOperators.contains(operator)
+        boolean isDateTime = fi.typeValue == 2
+        if (!isList && !(isDateTime && docDayOperators.contains(operator))) return null
+
+        EntityConditionFactoryImpl ecf = efi.getConditionFactoryImpl()
+        String filterName = "Report filter ${org.moqui.util.StringUtilities.camelCaseToPretty(fieldAlias)} ${operator}"
+        List<String> parts = []
+        if (isList) {
+            for (String part in (stringVal ?: "").split(",")) { String trimmed = part.trim(); if (trimmed) parts.add(trimmed) }
+            if (parts.isEmpty()) throw new EntityException("${filterName} needs a value in report ${dataDocumentId}")
+            if (("between".equals(operator) || "not-between".equals(operator)) && parts.size() != 2)
+                throw new EntityException("${filterName} needs exactly two values separated by a comma, found ${parts.size()}, in report ${dataDocumentId}")
+        } else {
+            if (stringVal == null || stringVal.trim().isEmpty()) return null
+            parts.add(stringVal.trim())
+        }
+
+        if (!isDateTime) {
+            List<Object> values = new ArrayList<>(parts.size())
+            for (String part in parts) values.add(fi.convertFromString(part, eci.l10nFacade))
+            return ecf.makeCondition(fieldAlias, EntityConditionFactoryImpl.stringComparisonOperatorMap.get(operator), values)
+        }
+
+        // date-time: each value becomes [start, endExclusive or null when the value has a time]
+        List<Timestamp[]> ranges = []
+        for (String part in parts) ranges.add(makeDayRange(fi, part, eci))
+        switch (operator) {
+            case "equals": return dayIs(ecf, fieldAlias, ranges[0])
+            case "not-equals": return dayIsNot(ecf, fieldAlias, ranges[0])
+            case "less": return ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN, ranges[0][0])
+            case "less-equals": return ranges[0][1] != null ? ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN, ranges[0][1]) :
+                    ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN_EQUAL_TO, ranges[0][0])
+            case "greater": return ranges[0][1] != null ? ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN_EQUAL_TO, ranges[0][1]) :
+                    ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN, ranges[0][0])
+            case "greater-equals": return ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN_EQUAL_TO, ranges[0][0])
+            case "between":
+                return ecf.makeCondition(ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN_EQUAL_TO, ranges[0][0]), EntityCondition.AND,
+                        ranges[1][1] != null ? ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN, ranges[1][1]) :
+                                ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN_EQUAL_TO, ranges[1][0]))
+            case "not-between":
+                return ecf.makeCondition(ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN, ranges[0][0]), EntityCondition.OR,
+                        ranges[1][1] != null ? ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN_EQUAL_TO, ranges[1][1]) :
+                                ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN, ranges[1][0]))
+            case "in":
+                List<EntityCondition> inConds = []
+                for (Timestamp[] range in ranges) inConds.add(dayIs(ecf, fieldAlias, range))
+                return ecf.makeCondition(inConds, EntityCondition.OR)
+            case "not-in":
+                List<EntityCondition> notInConds = []
+                for (Timestamp[] range in ranges) notInConds.add(dayIsNot(ecf, fieldAlias, range))
+                return ecf.makeCondition(notInConds, EntityCondition.AND)
+        }
+        return null
+    }
+    private static Timestamp[] makeDayRange(FieldInfo fi, String value, ExecutionContextImpl eci) {
+        java.sql.Date dateOnly = value.contains(":") ? null : eci.l10nFacade.parseDate(value, null)
+        if (dateOnly != null) {
+            Timestamp start = (Timestamp) fi.convertFromString(dateOnly.toString(), eci.l10nFacade)
+            Timestamp nextDay = (Timestamp) fi.convertFromString(dateOnly.toLocalDate().plusDays(1).toString(), eci.l10nFacade)
+            return [start, nextDay] as Timestamp[]
+        }
+        return [(Timestamp) fi.convertFromString(value, eci.l10nFacade), null] as Timestamp[]
+    }
+    private static EntityCondition dayIs(EntityConditionFactoryImpl ecf, String fieldAlias, Timestamp[] range) {
+        if (range[1] == null) return ecf.makeCondition(fieldAlias, EntityCondition.EQUALS, range[0])
+        return ecf.makeCondition(ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN_EQUAL_TO, range[0]), EntityCondition.AND,
+                ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN, range[1]))
+    }
+    private static EntityCondition dayIsNot(EntityConditionFactoryImpl ecf, String fieldAlias, Timestamp[] range) {
+        if (range[1] == null) return ecf.makeCondition(fieldAlias, EntityCondition.NOT_EQUAL, range[0])
+        return ecf.makeCondition(ecf.makeCondition(fieldAlias, EntityCondition.LESS_THAN, range[0]), EntityCondition.OR,
+                ecf.makeCondition(fieldAlias, EntityCondition.GREATER_THAN_EQUAL_TO, range[1]))
+    }
+
     private static Map<String, EntityValue> makeDdfByAlias(EntityList dataDocumentFieldList) {
         Map<String, EntityValue> ddfByAlias = new HashMap<>()
         int ddfSize = dataDocumentFieldList.size()
@@ -709,8 +865,17 @@ class EntityDataDocument {
                         dynamicView.addPqExprAlias(fieldAlias, fieldEntryKey, "text-long",
                                 "N".equals(defaultDisplay) ? "false" : ("Y".equals(defaultDisplay) ? "true" : null))
                     } else {
-                        dynamicView.addAlias(entityAlias, fieldAlias, fieldEntryKey, (String) ddf.getNoCheckSimple("functionName"),
+                        String functionName = (String) ddf.getNoCheckSimple("functionName")
+                        dynamicView.addAlias(entityAlias, fieldAlias, fieldEntryKey, functionName,
                                 "N".equals(defaultDisplay) ? "false" : ("Y".equals(defaultDisplay) ? "true" : null))
+                        // sssonline local patch (Simple Report #1154): a count is a whole number and an average a decimal,
+                        // whatever the field type (a count of an ID column was typed as an ID: left-aligned, with a LIKE
+                        // header search on COUNT that PostgreSQL rejects)
+                        if ("count".equals(functionName) || "count-distinct".equals(functionName)) {
+                            dynamicView.getAlias(fieldAlias)?.attributes?.put("type", "number-integer")
+                        } else if ("avg".equals(functionName)) {
+                            dynamicView.getAlias(fieldAlias)?.attributes?.put("type", "number-decimal")
+                        }
                     }
                 }
             }

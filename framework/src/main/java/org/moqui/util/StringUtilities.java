@@ -216,6 +216,32 @@ public class StringUtilities {
         return camelCase.toString();
     }
 
+    /** sssonline local patch (Simple Report #1158): turn a friendly name into a camelCase identifier without flattening
+     * capitals the user typed, unlike prettyToCamelCase. "Customer Name" and "customerName" both give "customerName",
+     * "Product ID" gives "productId", "Address 2" gives "address2". Words are separated by whitespace; a word in all
+     * capitals (ID, USD) is treated as one word ("Id", "Usd"). Callers validate the input first (letters, digits, and
+     * spaces, starting with a letter); this only converts. */
+    public static String friendlyToCamelCase(String friendly) {
+        if (friendly == null) return "";
+        String trimmed = friendly.trim();
+        if (trimmed.isEmpty()) return "";
+        StringBuilder camelCase = new StringBuilder();
+        String[] words = trimmed.split("\\s+");
+        for (int i = 0; i < words.length; i++) {
+            String word = words[i];
+            if (word.isEmpty()) continue;
+            boolean allUpper = word.length() > 1 && word.equals(word.toUpperCase()) && !word.equals(word.toLowerCase());
+            if (camelCase.length() == 0) {
+                camelCase.append(allUpper ? word.toLowerCase() : Character.toLowerCase(word.charAt(0)) + word.substring(1));
+            } else if (allUpper) {
+                camelCase.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1).toLowerCase());
+            } else {
+                camelCase.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            }
+        }
+        return camelCase.toString();
+    }
+
     public static String removeNonAlphaNumeric(String origString) {
         if (origString == null || origString.isEmpty()) return origString;
         int origLength = origString.length();

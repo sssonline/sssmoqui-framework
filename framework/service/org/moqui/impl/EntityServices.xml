@@ -138,7 +138,18 @@ along with this software (see the LICENSE.md file). If not, see
             <auto-parameters entity-name="moqui.entity.document.DataDocumentField" include="nonpk"/>
         </in-parameters>
         <actions>
-            <if condition="fieldNameAlias"><set field="fieldNameAlias" from="prettyToCamelCase(fieldNameAlias, false)"/></if>
+            <!-- sssonline local patch (Simple Report #1158): Column Name rule keeps typed capitals; new fields go last -->
+            <if condition="fieldNameAlias">
+                <service-call name="org.moqui.impl.EntityServices.normalize#DataDocumentFieldAlias" out-map="aliasOut"
+                        in-map="[fieldNameAlias:fieldNameAlias]"/>
+                <check-errors/>
+                <set field="fieldNameAlias" from="aliasOut.fieldNameAlias"/>
+            </if>
+            <if condition="sequenceNum == null">
+                <entity-find entity-name="moqui.entity.document.DataDocumentField" list="seqDdfList">
+                    <econdition field-name="dataDocumentId"/><select-field field-name="sequenceNum"/></entity-find>
+                <set field="sequenceNum" from="(seqDdfList.collect({ it.sequenceNum ?: 0 }).max() ?: 0) + 1" type="Integer"/>
+            </if>
             <service-call name="create#moqui.entity.document.DataDocumentField" in-map="context"/>
         </actions>
     </service>
@@ -150,13 +161,110 @@ along with this software (see the LICENSE.md file). If not, see
             <auto-parameters entity-name="moqui.entity.document.DataDocumentField" include="nonpk"/>
         </in-parameters>
         <actions>
-            <if condition="fieldNameAlias"><set field="fieldNameAlias" from="prettyToCamelCase(fieldNameAlias, false)"/></if>
             <if condition="!fieldSeqId">
                 <entity-find entity-name="moqui.entity.document.DataDocumentField" list="ddfList">
                     <econdition field-name="dataDocumentId"/><econdition field-name="fieldPath"/></entity-find>
                 <set field="fieldSeqId" from="ddfList ? ddfList[0].fieldSeqId : null"/>
             </if>
+            <!-- sssonline local patch (Simple Report #1158): Column Name rule keeps typed capitals, re-saving a name in its
+                 readable form keeps the stored name, and a rename carries into the report's filters and saved finds -->
+            <entity-find-one entity-name="moqui.entity.document.DataDocumentField" value-field="existingDdf" for-update="true"/>
+            <if condition="fieldNameAlias">
+                <service-call name="org.moqui.impl.EntityServices.normalize#DataDocumentFieldAlias" out-map="aliasOut"
+                        in-map="[fieldNameAlias:fieldNameAlias, existingAlias:existingDdf?.fieldNameAlias]"/>
+                <check-errors/>
+                <set field="fieldNameAlias" from="aliasOut.fieldNameAlias"/>
+            </if>
+            <if condition="existingDdf != null">
+                <set field="oldEffectiveAlias" from="existingDdf.fieldNameAlias ?: existingDdf.fieldPath.substring(existingDdf.fieldPath.lastIndexOf(':') + 1)"/>
+                <set field="newPath" from="fieldPath ?: existingDdf.fieldPath"/>
+                <!-- only an alias passed in (even blank) changes it; a call without fieldNameAlias keeps the stored one -->
+                <set field="newEffectiveAlias" from="context.containsKey('fieldNameAlias') ? (fieldNameAlias ?: newPath.substring(newPath.lastIndexOf(':') + 1)) : oldEffectiveAlias"/>
+                <if condition="oldEffectiveAlias != newEffectiveAlias">
+                    <service-call name="org.moqui.impl.EntityServices.rename#DataDocumentFieldAlias"
+                            in-map="[dataDocumentId:dataDocumentId, oldAlias:oldEffectiveAlias, newAlias:newEffectiveAlias]"/>
+                </if>
+            </if>
             <service-call name="update#moqui.entity.document.DataDocumentField" in-map="context"/>
+        </actions>
+    </service>
+    <service verb="normalize" noun="DataDocumentFieldAlias">
+        <description>sssonline local patch (Simple Report #1158): the Column Name (fieldNameAlias) rule. Accepts letters, digits,
+            and spaces starting with a letter, and stores a camelCase identifier whether typed as "Customer Name" or
+            "customerName". When existingAlias is passed and the input is that alias or its readable form ("Product ID"
+            for productId), the stored alias is kept exactly.</description>
+        <in-parameters>
+            <parameter name="fieldNameAlias"/>
+            <parameter name="existingAlias"/>
+        </in-parameters>
+        <out-parameters><parameter name="fieldNameAlias"/></out-parameters>
+        <actions><script><![CDATA[
+            String input = fieldNameAlias != null ? fieldNameAlias.toString().trim() : ""
+            if (!input) { fieldNameAlias = null; return }
+            if (existingAlias && (existingAlias == input || org.moqui.util.StringUtilities.camelCaseToPretty((String) existingAlias) == input)) {
+                fieldNameAlias = existingAlias; return
+            }
+            if (!(input ==~ /[A-Za-z][A-Za-z0-9 ]*/)) {
+                ec.message.addError("Column Name '${input}' can use only letters, digits, and spaces, and must start with a letter")
+                return
+            }
+            fieldNameAlias = org.moqui.util.StringUtilities.friendlyToCamelCase(input)
+        ]]></script></actions>
+    </service>
+    <service verb="rename" noun="DataDocumentFieldAlias">
+        <description>sssonline local patch (Simple Report #1158): carry a column alias rename into the document's conditions
+            (fieldNameAlias and toFieldNameAlias) and into the saved finds and column layouts of forms over the
+            document (formLocation ending in #DataDocument.[dataDocumentId]): saved search fields, saved sort, and
+            saved column positions. Does not change the DataDocumentField itself.</description>
+        <in-parameters>
+            <parameter name="dataDocumentId" required="true"/>
+            <parameter name="oldAlias" required="true"/>
+            <parameter name="newAlias" required="true"/>
+        </in-parameters>
+        <actions>
+            <if condition="oldAlias == newAlias"><return/></if>
+            <entity-find entity-name="moqui.entity.document.DataDocumentCondition" list="ddcList" for-update="true">
+                <econdition field-name="dataDocumentId"/></entity-find>
+            <iterate list="ddcList" entry="ddc">
+                <set field="ddcChanged" from="false"/>
+                <if condition="ddc.fieldNameAlias == oldAlias"><set field="ddc.fieldNameAlias" from="newAlias"/><set field="ddcChanged" from="true"/></if>
+                <if condition="ddc.toFieldNameAlias == oldAlias"><set field="ddc.toFieldNameAlias" from="newAlias"/><set field="ddcChanged" from="true"/></if>
+                <if condition="ddcChanged"><entity-update value-field="ddc"/></if>
+            </iterate>
+
+            <set field="locationSuffix" from="'#DataDocument.' + dataDocumentId"/>
+            <!-- filter the suffix in Groovy: an id containing _ would be a LIKE wildcard -->
+            <entity-find entity-name="moqui.screen.form.FormListFind" list="flfList" for-update="true">
+                <econdition field-name="formLocation" operator="like" value="%#DataDocument.%"/></entity-find>
+            <iterate list="flfList" entry="flf">
+                <if condition="!flf.formLocation.endsWith(locationSuffix)"><continue/></if>
+                <entity-find-one entity-name="moqui.screen.form.FormListFindField" value-field="oldFlff" for-update="true">
+                    <field-map field-name="formListFindId" from="flf.formListFindId"/><field-map field-name="fieldName" from="oldAlias"/></entity-find-one>
+                <if condition="oldFlff != null">
+                    <set field="newFlff" from="oldFlff.cloneValue()"/>
+                    <set field="newFlff.fieldName" from="newAlias"/>
+                    <entity-delete value-field="oldFlff"/>
+                    <entity-create value-field="newFlff" or-update="true"/>
+                </if>
+                <if condition="flf.orderByField">
+                    <set field="newOrderBy" from="flf.orderByField.split(',').collect({ String obf -> String t = obf.trim(); String pre = (t.startsWith('-') || t.startsWith('+') || t.startsWith('^')) ? t.substring(0, 1) : ''; String nm = t.substring(pre.length()); (nm == oldAlias ? pre + newAlias : t) }).join(',')"/>
+                    <if condition="newOrderBy != flf.orderByField"><set field="flf.orderByField" from="newOrderBy"/><entity-update value-field="flf"/></if>
+                </if>
+            </iterate>
+
+            <entity-find entity-name="moqui.screen.form.FormConfig" list="fcList">
+                <econdition field-name="formLocation" operator="like" value="%#DataDocument.%"/></entity-find>
+            <iterate list="fcList" entry="fc">
+                <if condition="!fc.formLocation.endsWith(locationSuffix)"><continue/></if>
+                <entity-find-one entity-name="moqui.screen.form.FormConfigField" value-field="oldFcf" for-update="true">
+                    <field-map field-name="formConfigId" from="fc.formConfigId"/><field-map field-name="fieldName" from="oldAlias"/></entity-find-one>
+                <if condition="oldFcf != null">
+                    <set field="newFcf" from="oldFcf.cloneValue()"/>
+                    <set field="newFcf.fieldName" from="newAlias"/>
+                    <entity-delete value-field="oldFcf"/>
+                    <entity-create value-field="newFcf" or-update="true"/>
+                </if>
+            </iterate>
         </actions>
     </service>
 

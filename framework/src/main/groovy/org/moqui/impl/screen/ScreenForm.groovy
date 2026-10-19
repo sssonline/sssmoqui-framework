@@ -724,8 +724,15 @@ class ScreenForm {
         }
 
         ArrayList<String> sortedFields = new ArrayList<>(displayFieldNamesSize)
-        sortedFields.addAll(idDateFields); sortedFields.addAll(numberFields)
-        sortedFields.addAll(shortFields); sortedFields.addAll(longFields)
+        // sssonline local patch (Simple Report #1158): a Simple Report (DataDocument.*) shows its columns in the report's
+        // Seq order, one field per column, instead of grouped by type and stacked
+        if (ed.getFullEntityName().startsWith("DataDocument.")) {
+            sortedFields.addAll(displayFieldNames)
+            fieldsPerCol = 1
+        } else {
+            sortedFields.addAll(idDateFields); sortedFields.addAll(numberFields)
+            sortedFields.addAll(shortFields); sortedFields.addAll(longFields)
+        }
 
         MNode columnsNode = newFormNode.first("columns")
         if (columnsNode == null) {
@@ -881,12 +888,22 @@ class ScreenForm {
             }
             break
         case "find-display":
+            // sssonline local patch (Simple Report #1154): fields named in the context Collection formHeaderSkipFields
+            // get no Search Options (header) input; the Simple Report Run box is the only way to set their value
+            Object headerSkipObj = ecfi.getEci().contextStack.get("formHeaderSkipFields")
+            boolean skipHeaderFind = headerSkipObj instanceof Collection && ((Collection) headerSkipObj).contains(fieldName)
             // handle header-field
             if (baseFormNode.name == "form-list" && !newFieldNode.hasChild("header-field"))
                 newFieldNode.append("header-field", ["show-order-by":"case-insensitive"])
             MNode headerFieldNode = newFieldNode.hasChild("header-field") ?
                 newFieldNode.first("header-field") : newFieldNode.append("header-field", null)
-            if ("date".equals(efType) || "time".equals(efType)) {
+            if (skipHeaderFind) {
+                if (efType.startsWith("number-") || efType.startsWith("currency-")) {
+                    newFieldNode.attributes.put("align", "right")
+                    String skipFunction = fieldInfo?.fieldNode?.attribute("function")
+                    newFieldNode.attributes.put("show-total", skipFunction != null && skipFunction in ['min', 'max', 'avg'] ? skipFunction : "sum")
+                }
+            } else if ("date".equals(efType) || "time".equals(efType)) {
                 headerFieldNode.append("date-find", [type:efType])
             } else if ("date-time".equals(efType)) {
                 headerFieldNode.append("date-period", [time:"true"])
@@ -2318,6 +2335,52 @@ class ScreenForm {
         return parmMap
     }
 
+    // ===== sssonline local patch (Simple Report #1153): saved-find Schedule helpers for the Find Options template =====
+    static final Map<String, String> SCHEDULE_LABELS = ['0 0 6 ? * MON-FRI':'Monday-Friday', '0 0 6 ? * *':'Every Day',
+            '0 0 6 ? * MON':'Monday Only', '0 0 6 1 * ?':'Monthly']
+    static String getScheduleLabel(String cronExpression, ExecutionContextImpl ec) {
+        String label = SCHEDULE_LABELS.get(cronExpression)
+        if (label) return label
+        return org.moqui.impl.service.ScheduledJobRunner.getCronDescription(cronExpression, ec.userFacade.getLocale(), true) ?: cronExpression
+    }
+    static String getScheduleFormatLabel(String renderMode) {
+        if ("xsl-fo".equals(renderMode)) return "PDF"
+        return (renderMode ?: "csv").toUpperCase()
+    }
+    /** The next time a cron schedule fires, in the server's time zone, e.g. "Monday, October 19, 2026 at 6:00 AM" */
+    static String getNextScheduleRunText(String cronExpression) {
+        try {
+            java.time.ZonedDateTime next = org.moqui.impl.service.ScheduledJobRunner.getExecutionTime(cronExpression)
+                    .nextExecution(java.time.ZonedDateTime.now()).get()
+            return next.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy 'at' h:mm a", Locale.US))
+        } catch (Throwable t) {
+            return ""
+        }
+    }
+    /** Why the Schedule control can't be offered, or null: email not set up on the system, or no email on the account */
+    static String getScheduleBlockedReason(ExecutionContextImpl ec) {
+        EntityValue emailServer = ec.entityFacade.find("moqui.basic.email.EmailServer").condition("emailServerId", "SYSTEM")
+                .useCache(true).disableAuthz().one()
+        EntityValue emailTemplate = ec.entityFacade.find("moqui.basic.email.EmailTemplate").condition("emailTemplateId", "SCREEN_RENDER")
+                .useCache(true).disableAuthz().one()
+        if (!emailServer?.getNoCheckSimple("smtpHost") || !emailTemplate?.getNoCheckSimple("fromAddress"))
+            return "Scheduled email isn't set up on this system. Ask an administrator."
+        if (!getScheduleUserEmail(ec)) return "Add an email address to your account to schedule reports."
+        return null
+    }
+    static String getScheduleUserEmail(ExecutionContextImpl ec) {
+        return (String) ec.userFacade.getUserAccount()?.getNoCheckSimple("emailAddress")
+    }
+    static void deleteUserScreenScheduled(String formListFindId, String userId, ExecutionContextImpl ec) {
+        EntityList ssList = ec.entityFacade.find("moqui.screen.ScreenScheduled").condition("formListFindId", formListFindId)
+                .condition("userId", userId).useCache(false).disableAuthz().list()
+        for (EntityValue ss in ssList) {
+            ec.entityFacade.find("moqui.screen.ScreenScheduledLock").condition("screenScheduledId", ss.getNoCheckSimple("screenScheduledId"))
+                    .disableAuthz().deleteAll()
+            ss.delete()
+        }
+    }
+
     static EntityValue getFormListFindScreenScheduled(String formListFindId, ExecutionContextImpl ec) {
         EntityList screenScheduledList = ec.entityFacade.find("moqui.screen.ScreenScheduled")
                 .condition("formListFindId", formListFindId).condition("userId", ec.userFacade.userId)
@@ -2361,6 +2424,10 @@ class ScreenForm {
         if (cs.containsKey("DeleteFind")) {
             if (flf == null) { ec.messageFacade.addError("Saved find with ID ${formListFindId} not found, not deleting"); return null }
 
+            // sssonline local patch (Simple Report #1153): deleting a saved find from the user's list stops the user's
+            // schedule for it, even when the saved find is still shared with other users or groups
+            deleteUserScreenScheduled(formListFindId, userId, ec)
+
             // delete FormListFindUserDefault that reference this formListFindId for this user
             ec.entity.find("moqui.screen.form.FormListFindUserDefault").condition("userId", userId)
                     .condition("formListFindId", formListFindId).deleteAll()
@@ -2388,9 +2455,19 @@ class ScreenForm {
             return null
         }
 
+        // sssonline local patch (Simple Report #1153): Stop Schedule, for a schedule the user set up for themselves
+        if (cs.containsKey("StopSchedule")) {
+            if (flf == null) { ec.messageFacade.addError("Saved find with ID ${formListFindId} not found, not stopping its schedule"); return null }
+            deleteUserScreenScheduled(formListFindId, userId, ec)
+            ec.messageFacade.addMessage("Schedule stopped.", "success")
+            return formListFindId
+        }
+
         if (cs.containsKey("ScheduleFind")) {
             if (flf == null) { ec.messageFacade.addError("Saved find with ID ${formListFindId} not found, not scheduling"); return null }
             if (!userId) { ec.messageFacade.addError("No user logged in, not scheduling saved find with ID ${formListFindId}"); return formListFindId }
+            String blockedReason = getScheduleBlockedReason(ec)
+            if (blockedReason) { ec.messageFacade.addError(blockedReason); return formListFindId }
 
             String renderMode = (String) cs.getByString("renderMode") ?: "csv"
             String screenPath = (String) cs.getByString("screenPath")
@@ -2404,9 +2481,16 @@ class ScreenForm {
             Map<String, Object> screenScheduledMap = [screenPath:screenPath, formListFindId:formListFindId, renderMode:renderMode,
                     noResultsAbort:"Y", cronExpression:cronSelected, emailTemplateId:"SCREEN_RENDER", emailSubject:emailSubject,
                     userId:userId] as Map<String, Object>
-            ec.serviceFacade.sync().name("create#moqui.screen.ScreenScheduled").parameters(screenScheduledMap).disableAuthz().call()
+            Map<String, Object> ssOut = ec.serviceFacade.sync().name("create#moqui.screen.ScreenScheduled").parameters(screenScheduledMap).disableAuthz().call()
 
-            ec.messageFacade.addMessage("Saved find scheduled to send by email")
+            // sssonline local patch (Simple Report #1153): a new schedule sends nothing until its first scheduled time; the
+            // scheduled-send job only runs a schedule whose last run is before its latest scheduled time, so start the
+            // lock at now (with no lock row the job would send on its next 15-minute check)
+            String newScreenScheduledId = (String) ssOut?.get("screenScheduledId")
+            if (newScreenScheduledId) ec.serviceFacade.sync().name("create#moqui.screen.ScreenScheduledLock")
+                    .parameters([screenScheduledId:newScreenScheduledId, lastRunTime:ec.userFacade.getNowTimestamp()]).disableAuthz().call()
+
+            ec.messageFacade.addMessage("Saved find scheduled.", "success")
 
             return formListFindId
         }

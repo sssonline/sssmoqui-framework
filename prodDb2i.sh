@@ -10,6 +10,8 @@ for v in entity_ds_user entity_ds_password; do
   [ -z "${!v}" ] && missing="$missing $v"
 done
 if [ -n "$missing" ]; then echo "Refusing to start, environment variables not set:$missing"; exit 1; fi
+# the Bitronix server ID is generated on first start and saved in runtime/txlog/server-id; ASPEN_TM_SERVER_ID only overrides it
+TM_OPT=""; [ -n "$ASPEN_TM_SERVER_ID" ] && TM_OPT="-Dbitronix.tm.serverId=$ASPEN_TM_SERVER_ID"
 #java -server -Djava.awt.headless=true -XX:-OmitStackTraceInFastThrow -XX:+UseG1GC -Xmx${MEM}m -jar moqui.war conf=conf/MoquiProductionConfDb2i.xml
 #java -Djava.awt.headless=true -XX:-OmitStackTraceInFastThrow -XX:+UseG1GC -Xmx${MEM}m -jar moqui.war conf=conf/MoquiProductionConfDb2i.xml port=8081
-java -Djava.awt.headless=true -XX:-OmitStackTraceInFastThrow -XX:+UseG1GC -Xmx${MEM}m -jar moqui.war conf=conf/MoquiProductionConfDb2i.xml
+java -Djava.awt.headless=true -XX:-OmitStackTraceInFastThrow -XX:+UseG1GC -Xmx${MEM}m $TM_OPT -jar moqui.war conf=conf/MoquiProductionConfDb2i.xml

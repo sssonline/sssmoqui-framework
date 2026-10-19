@@ -45,7 +45,9 @@ along with this software (see the LICENSE.md file). If not, see
         </in-parameters>
         <actions>
             <entity-find-one entity-name="moqui.screen.ScreenScheduled" value-field="screenScheduled" cache="true"/>
-            <set field="screenPath" from="screenScheduled.screenPath"/>
+            <!-- sssonline local patch (Simple Report #1153): a schedule made on a /vapps page renders its /apps twin (the
+                 /vapps mount is the single-page shell) -->
+            <set field="screenPath" from="screenScheduled.screenPath?.replaceFirst('^/vapps/', '/apps/')"/>
             <set field="renderMode" from="screenScheduled.renderMode ?: 'csv'"/>
             <set field="formListFindId" from="screenScheduled.formListFindId"/>
             <set field="saveToLocation" from="screenScheduled.saveToLocation"/>
@@ -94,14 +96,34 @@ along with this software (see the LICENSE.md file). If not, see
                 ec.context.putAll(bodyParameters)
 
                 // handle formListFindId parameters (formListFindId already in context to set columns, etc)
+                Map flfParameters = [:]
                 if (formListFindId) {
-                    def flfParameters = org.moqui.impl.screen.ScreenForm.makeFormListFindParameters(formListFindId, ec)
+                    flfParameters = org.moqui.impl.screen.ScreenForm.makeFormListFindParameters(formListFindId, ec)
+                    // sssonline local patch (Simple Report #1153): keep the saved find's sort
+                    def scheduledFlf = ec.entity.find("moqui.screen.form.FormListFind").condition("formListFindId", formListFindId).disableAuthz().one()
+                    if (scheduledFlf?.orderByField) flfParameters.put("orderByField", scheduledFlf.orderByField)
                     ec.context.putAll(flfParameters)
                     bodyParameters.putAll(flfParameters)
                 }
 
                 // login user before rendering screen, render as user
                 if (userAccount != null) ec.user.internalLoginUser(userAccount.username, false)
+
+                // sssonline local patch (Simple Report #1153): an optional pre-send check, run as the user. Simple Report
+                // refuses a report the user can no longer open (not shared, deleted) or one over the export row cap
+                skipScheduledSend = false
+                String preSendService = "sssonline.basalt.SimpleReportServices.check#ScheduledReportSend"
+                if (formListFindId && ec.service.isServiceDefined(preSendService)) {
+                    Map preSendOut = ec.service.sync().name(preSendService).parameters([formListFindId:formListFindId,
+                            parameters:new HashMap(flfParameters), screenScheduledId:screenScheduledId]).call()
+                    if (preSendOut != null && preSendOut.allowed == false) {
+                        skipScheduledSend = true
+                        ec.logger.warn((String) preSendOut.warning ?: "ScreenScheduled ${screenScheduledId} not sent by the pre-send check".toString())
+                    }
+                    if (ec.message.hasError()) ec.message.clearErrors()
+                }
+                // the render below only runs when the pre-send check allowed it; lastRunTime is still saved at the end
+                if (!skipScheduledSend) {
 
                 def screenRender = ec.screen.makeRender().webappName(webappName).rootScreenFromHost(webHostName ?: 'localhost')
                         .screenPath(screenPath).renderMode(renderMode)
@@ -115,7 +137,16 @@ along with this software (see the LICENSE.md file). If not, see
                     screenRender.lastStandalone("true")
                 }
 
-                if (ec.screen.isRenderModeText(renderMode)) {
+                if (renderMode == "xlsx") {
+                    // sssonline local patch (Simple Report #1153): no xlsx screen output exists; build the workbook from the
+                    // json render the same way the XLSX button (/poi servlet) does
+                    screenRender.renderMode("json")
+                    String jsonText = '[' + (screenRender.render() ?: '') + ']'
+                    ByteArrayOutputStream xlsxBaos = new ByteArrayOutputStream()
+                    org.moqui.impl.webapp.MoquiPoiServlet.makeWorkbook(jsonText, false).write(xlsxBaos)
+                    attachmentInfo = [fileName:filename, contentType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            contentBytes:xlsxBaos.toByteArray()]
+                } else if (ec.screen.isRenderModeText(renderMode)) {
                     String screenText = screenRender.render()
                     if (screenText != null && screenText.trim().length() > 0) {
                         if (renderMode == "xsl-fo") {
@@ -141,10 +172,11 @@ along with this software (see the LICENSE.md file). If not, see
                     String mimeType = ec.screen.getMimeTypeByMode(renderMode)
                     attachmentInfo = [fileName:filename, contentType:mimeType, contentBytes:baos.toByteArray()]
                 }
+                }
             ]]></script>
 
-            <!-- if noResultsAbort == 'Y' don't write file or send email -->
-            <if condition="screenScheduled.noResultsAbort != 'Y' || !ec.context.getSharedMap().get('_formListRendered') || ec.context.getSharedMap().get('_formListResultCount')"><then>
+            <!-- if noResultsAbort == 'Y' don't write file or send email; nothing when the pre-send check refused (sssonline) -->
+            <if condition="!skipScheduledSend &amp;&amp; (screenScheduled.noResultsAbort != 'Y' || !ec.context.getSharedMap().get('_formListRendered') || ec.context.getSharedMap().get('_formListResultCount'))"><then>
                 <!-- send email -->
                 <if condition="emailTemplate != null">
                     <set field="toAddressSet" from="new HashSet()"/>

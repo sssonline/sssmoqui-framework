@@ -40,14 +40,15 @@ VM D4as_v6 ~$135 · OS disk ~$20 · Postgres GP D2ds ~$130 · DB storage/backup 
 3. [ ] Spike: XA on Azure Postgres (`max_prepared_transactions`). Otherwise go non-XA
 4. [ ] Provision Azure (guide §3.1), with geo-redundant backup + private networking chosen at creation
 5. [ ] Release tagging across all repos + build of `moqui-plus-runtime.war`
-6. [ ] Dry-run install + data load on a throwaway DB, and time it; build the Postgres root CA bundle and confirm `verify-full` connects (guide §3.2)
-7. [ ] Azure Files attachments verified (upload/download)
-8. [ ] ACS Email set up + domain verified; test password reset & invoice email
-9. [ ] Pause unused ServiceJobs (payroll, SFTP polling, Ziret demos)
-10. [ ] Monitoring + alerts + Sentry prod environment
-11. [ ] **Restore drill** (PITR → new server → app boots → log in)
-12. [ ] Opening balance load + client sign-off on trial balance
-13. [ ] Go-live; first week watch logs daily
+6. [ ] Bitronix server ID: nothing to set (guide §3.3). Confirm the first start logs `Bitronix transaction manager server ID: aspen-<host>-<hex> (from .../txlog/server-id)`, that `shared/txlog` was not copied from the sim or another instance, and that the ID is unchanged after the next restart
+7. [ ] Dry-run install + data load on a throwaway DB, and time it; build the Postgres root CA bundle and confirm `verify-full` connects (guide §3.2)
+8. [ ] Azure Files attachments verified (upload/download)
+9. [ ] ACS Email set up + domain verified; test password reset & invoice email
+10. [ ] Pause unused ServiceJobs (payroll, SFTP polling, Ziret demos)
+11. [ ] Monitoring + alerts + Sentry prod environment
+12. [ ] **Restore drill** (PITR → new server → app boots → log in)
+13. [ ] Opening balance load + client sign-off on trial balance
+14. [ ] Go-live; first week watch logs daily
 
 ## Postgres dialect fixes (from code sweep, Oct 2026)
 | Status | Where | Problem on Postgres | Fix |
