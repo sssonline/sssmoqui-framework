@@ -259,4 +259,64 @@ sudo certbot certonly --webroot -w /var/www/letsencrypt -d valhalla.spokanesoftw
 - 3 attempts (≈23:43, 23:45, 23:58 UTC) failed identically: `During secondary validation: DNS problem: networking error looking up A/AAAA` (first one: `... looking up CAA`). Primary validation succeeded (resolved and fetched the challenge from `20.25.186.24`).
 - Ruled out: CAA (none, NOERROR from Cloudflare NS, 1.1.1.1, 8.8.8.8, 9.9.9.9); DNSSEC (not enabled: no DS at .com, no DNSKEY); challenge path reachable from outside; Let's Debug (letsdebug.net, http-01) 0 problems; LE status all operational. Community threads describe this as an LE-side transient that clears on a later retry.
 - Stopped retrying to stay under LE's 5 failed validations/hour/hostname; one retry scheduled for 00:25 UTC.
+- 4th attempt (00:40 UTC, 2026-10-20) failed identically. `certbot certonly --dry-run` against **LE staging** fails the same way, so it's systematic, not a blip.
+- SSH tunnel dropped once (`Connection reset by peer`); reopened with `-o ServerAliveInterval=30 -o ServerAliveCountMax=6`. Aspen and nginx were unaffected.
 - **[VM]** staged the https server block at `/etc/nginx/sites-available/aspen-https.staged` (443 ssl http2, Let's Encrypt cert paths, TLS 1.2/1.3, HSTS, `client_max_body_size 50m`, 600 s proxy timeouts, proxy to `127.0.0.1:8080` with `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto https`, websocket upgrade for `/notws`). Enabled once the certificate exists.
+
+#### 2026-10-20 — certificate diagnosis
+- Rechecked: DNS → `20.25.186.24` from 1.1.1.1, 8.8.8.8 and Cloudflare's NS; port 80 301-redirects from the internet; a test file in the challenge folder is fetchable. unboundtest.com (LE's resolver emulator) was down (Cloudflare 525).
+- **[VM]** nginx access log shows which LE validators reached the VM:
+```
+sudo grep -h "acme-challenge" /var/log/nginx/access.log* | awk '{print $4, $1, $9}'
+```
+  23:45:58 primary + 4 remote perspectives (200); 23:46:23 primary + 2; 23:50:41 primary + 2; 00:40 primary only. So HTTP and port 80 work from all over; **some remote perspectives time out resolving the name at Cloudflare's nameservers** and never reach the VM, and LE's multi-perspective rule needs all but one to succeed. No other ports are involved (HTTP-01 uses inbound 80 only).
+- Self-serve test (staging, doesn't count toward production limits):
+```
+sudo tail -f /var/log/nginx/access.log | grep --line-buffered acme-challenge      # terminal 1
+sudo certbot certonly --dry-run -v --webroot -w /var/www/letsencrypt -d valhalla.spokanesoftware.com --agree-tos --register-unsafely-without-email   # terminal 2
+sudo grep -E '"(detail|status|hostname|addressUsed|url)"' /var/log/letsencrypt/letsencrypt.log | tail -20
+```
+
+#### 2026-10-20 — certificate issued
+- **[VM]** (Ian) staging dry run with the access log tailed: all remote perspectives fetched the token (`200` from 66.133.109.36 + 4 AWS IPs at 16:16:31; 23.178.112.104 + 4 at 16:16:53 UTC). Then the production run succeeded: Let's Encrypt `YE1`, `CN=valhalla.spokanesoftware.com`, valid 2026-10-20 15:18 → **2027-01-18**. The previous evening's failures were on the LE/Cloudflare side and cleared overnight.
+- The production run was done without `--deploy-hook`, so a global deploy hook was added instead (applies to every renewal regardless of how the cert was requested):
+```
+printf '#!/bin/sh\nsystemctl reload nginx\n' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+sudo certbot renew --dry-run          # "all simulated renewals succeeded"; certbot.timer runs twice daily
+```
+
+### 17. HTTPS switchover
+**[VM]**
+```
+cat /etc/nginx/sites-available/aspen-https.staged | sudo tee -a /etc/nginx/sites-available/aspen   # enable the 443 block
+sudo nginx -t && sudo systemctl reload nginx
+sudo rm -f /etc/nginx/sites-available/aspen-https.staged
+# /opt/aspen/aspen.env (sed, no secrets printed):
+#   webapp_https_enabled=true, webapp_http_host=valhalla.spokanesoftware.com,
+#   webapp_http_port=80, webapp_https_port=443, webapp_client_ip_header=X-Real-IP
+sudo systemctl restart aspen          # Moqui initialized in 78 s, Jetty up at 82 s
+sudo sed -i "/add_header Strict-Transport-Security/d" /etc/nginx/sites-available/aspen && sudo systemctl reload nginx
+```
+- HSTS was sent twice (nginx and Moqui both add it); removed nginx's copy, Moqui's `max-age=31536000` remains.
+**[Mac]** from the internet:
+```
+curl -s -o /dev/null -w "%{http_code} %{ssl_verify_result}" https://valhalla.spokanesoftware.com/status    # 200 0
+curl -s -o /dev/null -w "%{http_code} %{redirect_url}" http://valhalla.spokanesoftware.com/Login          # 301 -> https
+echo | openssl s_client -connect valhalla.spokanesoftware.com:443 -servername valhalla.spokanesoftware.com | grep "Verify return code"   # 0 (ok)
+```
+- Result: **https://valhalla.spokanesoftware.com live** with a valid certificate; login page served (admin already exists). The SSH tunnel is no longer needed.
+
+### 18. SSH shortcut on Ian's Mac
+**[Mac]** `~/.ssh/config` (backup `~/.ssh/config.bak-20261020-092509`): added
+```
+# Valhalla production Aspen VM (Azure West US 3, vm-aspen-valhalla)
+Host valhalla
+  HostName 20.25.186.24
+  User aspen
+  IdentityFile ~/.ssh/vm-aspen-valhalla_key.pem
+  IdentitiesOnly yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 6
+```
+and renamed the existing local alias `aspen-valhalla` (SSS LAN host `172.16.1.40`, user `spokane`) to `valhalla-dev`. `ssh valhalla 'hostname; whoami'` → `vm-aspen-valhalla`, `aspen`.

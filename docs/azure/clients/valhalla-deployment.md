@@ -34,7 +34,7 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | VM | `vm-aspen-valhalla`, Standard_D2as_v6, Ubuntu Server 24.04.5 LTS, Premium SSD 64 GiB, no auto-shutdown | ✅ 2026-10-19 |
 | VM admin login | `aspen`, key `~/.ssh/vm-aspen-valhalla_key.pem` (Ian's Mac; back it up to the SSS password manager). Moqui itself will run as the no-login service account `aspensvc` (guide §3.2) | ✅ |
 | Public IP | `20.25.186.24` (static) | ✅ |
-| VNet | `vnet-westus3-1`, `172.16.0.0/16`; VM subnet `snetwestus3-1` `172.16.0.0/24` (VM `172.16.0.4`) | ✅ |
+| VNet | `vnet-westus3-1`, `172.16.0.0/16` (⚠️ overlaps the SSS office LAN `172.16.x.x`: no problem over the public IP, blocks a future office↔Azure VPN without rebuilding the DB subnet); VM subnet `snetwestus3-1` `172.16.0.0/24` (VM `172.16.0.4`) | ✅ |
 | DB subnet | `snet-db` `172.16.1.0/24`, delegated to `Microsoft.DBforPostgreSQL/flexibleServers` | ✅ |
 | NSG | SSH (22) allowed only from SSS office IP `70.89.140.153` | ✅ (add an IP here if working from elsewhere) |
 | Postgres | `psql-aspen-valhalla.postgres.database.azure.com`, PostgreSQL 18.6, Burstable B2s (2 vCore, 4 GiB), 32 GiB autogrow, 35-day geo-redundant backup, private access in `snet-db`, admin `aspenadmin` (password in SSS password manager) | ✅ 2026-10-19 |
@@ -44,8 +44,11 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | App database | DB `aspen` owned by login `aspen_app` (password in SSS password manager); `aspenadmin` granted `aspen_app`; `verify-full` login as `aspen_app` tested | ✅ 2026-10-19 |
 | VM base setup | OS patched (no reboot needed), unattended-upgrades on; Temurin JDK 11.0.32.1; nginx 1.24 (default site only), certbot 2.9, fail2ban; service account `aspensvc` (no login); `/opt/aspen/{releases,shared/{conf,log,txlog,sessions}}` 0750; CA bundle at `/opt/aspen/shared/conf/azure-postgres-root-ca.pem`; ufw: deny in except 22/80/443 | ✅ 2026-10-19 |
 | Release | `/opt/aspen/releases/2026-10-19_06cbcf0d` (WAR sha256 `da60abafb722…`, 173 MB unpacked, `RELEASE.txt` lists every repo commit, branch `update`), `current` → it; `log`/`txlog`/`sessions` → `shared/` | ✅ 2026-10-19 |
-| Service | `/etc/systemd/system/aspen.service` enabled (Temurin 11 path pinned, preflight tested), `/opt/aspen/aspen.env` root 0600 with secrets still blank, `webapp_https_enabled=false` for the tunnel dry run | ⏳ secrets to fill |
-| NSG 80/443 | still closed: open once nginx + TLS cert are ready (needs the domain, D14) | ⏳ |
+| Service | `/etc/systemd/system/aspen.service` enabled (Temurin 11 path pinned, preflight tested); `/opt/aspen/aspen.env` root 0600, secrets filled, `webapp_https_enabled=true`, host `valhalla.spokanesoftware.com`, `X-Real-IP` | ✅ 2026-10-20 |
+| NSG 80/443 | `allow-web` TCP 80,443 from Any, priority 310 | ✅ 2026-10-19 |
+| DNS | Cloudflare `A valhalla.spokanesoftware.com → 20.25.186.24`, DNS only | ✅ 2026-10-19 |
+| TLS | Let's Encrypt (YE1) via certbot webroot, expires 2027-01-18, auto-renew (certbot.timer + `renewal-hooks/deploy/reload-nginx`, dry run OK); nginx 443 → 127.0.0.1:8080 | ✅ 2026-10-20 |
+| Live URL | **https://valhalla.spokanesoftware.com** (admin account created; SSH alias `valhalla` on Ian's Mac) | ✅ 2026-10-20 |
 | Skipped for now | Budget alert, Key Vault, VM backup, Azure Files storage account, DNS record | add before go-live as needed (guide §2) |
 
 ## Open questions (ask the client or decide internally)
