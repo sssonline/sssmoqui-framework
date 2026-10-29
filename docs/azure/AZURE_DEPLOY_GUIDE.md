@@ -1,15 +1,18 @@
 # Aspen on Azure — General Deployment Guide
 
-Reusable for any new Aspen client on Azure. Client-specific choices live in `docs/azure/clients/<client>.md`.
-Status: **draft**. ❓ marks items that still need verification in the first dry run.
+Reusable reference for any new Aspen client on Azure: **why** each choice was made, what it costs, and what to watch.
+- **How** (the ordered, copy-paste install steps): [`INSTALL.md`](INSTALL.md). Follow that to build a server.
+- Client decisions and resource lists: `clients/<client>-deployment.md`. Command-by-command history of a real install: `clients/<client>-install-log.md`.
+
+Status: first install (Valhalla) is live as of 2026-10-20; ⏳ marks parts not yet done there (attachments, email, monitoring, long-term backups, release procedure).
 
 ## 0. What the codebase tells us
 
 | Area | Finding | Source |
 |---|---|---|
 | Runtime | Moqui runs as one Java process (`java -jar moqui.war conf=...`), started by the prod scripts with `-Xmx8192m` (8 GB heap) and G1GC by default | `prodMySQL.sh`, `prodDb2i.sh` |
-| Java | Compiled for Java 11; the Docker image uses `eclipse-temurin:11-jdk`. Dev machines run JDK 23 | `framework/build.gradle:45`, `docker/simple/Dockerfile` |
-| DB options already wired | **MySQL** (`MoquiProductionConfMySQL.xml`, JDBC 8.0.33 in `runtime/lib`), **DB2 for i** (`jt400.jar`, `MoquiProductionConfDb2i.xml`), H2 (dev only). Some views and services branch on the DB type | `runtime/conf`, `aspen/entity/AspenViewEntities.xml:573` |
+| Java | Compiled for Java 11 (`update` branch, Moqui 3.1.0-rc2); the Docker image uses `eclipse-temurin:11-jdk`. Dev Macs have JDK 23 installed but run Gradle/Moqui on 11 (`JAVA_HOME`); every test run logs `Running on Java 11.x` | `framework/build.gradle:45`, `docker/simple/Dockerfile` |
+| DB options already wired | **PostgreSQL** (`MoquiProductionConfPostgres.xml`, `MoquiDevConfPostgres.xml`, JDBC 42.7.13, `devPostgres.sh`/`prodPostgres.sh`/`cleanPostgres.sh`; the Azure default), **MySQL** (`MoquiProductionConfMySQL.xml`, JDBC 8.0.33 in `runtime/lib`), **DB2 for i** (`jt400.jar`, `MoquiProductionConfDb2i.xml`), H2 (dev only). Some views and services branch on the DB type | `runtime/conf`, `aspen/entity/AspenViewEntities.xml:573` |
 | Transactions | Moqui uses Bitronix **XA** transactions by default (`xa-properties`). Non-XA is possible with `jdbc-uri` | `MoquiDefaultConf.xml:310,466` |
 | Existing deploy pattern | `aspendocker.sh` builds the image `sssonline/aspen` (a private Docker Hub repo) and SSHes to a VPS | `aspendocker.sh`, `docker/simple` |
 | Reverse proxy / TLS | The compose files put nginx in front of Moqui (TLS ends at nginx) | `docker/moqui-mysql-compose.yml` |
@@ -49,15 +52,15 @@ Moqui treats both as first-class (`postgres` and `mysql8` confs in `MoquiDefault
 | | PostgreSQL | MySQL 8.4 |
 |---|---|---|
 | Moqui upstream lean | ✅ creator's suggested default, production compose example | Supported, MySQL compose example |
-| Already in our repo | ❌ no prod conf, JDBC jar, or scripts (`MoquiDevConf.xml:21` has a commented hint) | ✅ prod conf, `devMySQL.sh`, backup/restore scripts, JDBC jar |
+| Already in our repo | ✅ since Oct 2026: dev/prod confs, JDBC jar, `devPostgres.sh`/`prodPostgres.sh`/`cleanPostgres.sh`, Gradle `-Pconf` support | ✅ prod conf, `devMySQL.sh`, backup/restore scripts, JDBC jar |
 | Closeness to DB2 | **Closer.** It's strict and ANSI like DB2, with real schemas and transactional DDL | Looser (silent type coercion, different date functions) |
 | Complex reporting queries | Better planner, CTEs, partial indexes | Good |
-| Moqui XA (on by default, `PGXADataSource`) | Needs `max_prepared_transactions > 0`. ❓ verify it's settable on Azure (static, needs a restart) | Needs the `XA_RECOVER_ADMIN` grant. ❓ verify on Azure |
+| Moqui XA (on by default, `PGXADataSource`) | Needs `max_prepared_transactions > 0`: ✅ settable on Azure Flexible Server (set to 100 on Valhalla) | Needs the `XA_RECOVER_ADMIN` grant (unverified on Azure) |
 | Team familiarity | New. Need `devPostgres.sh` + Postgres.app/Docker locally | Devs can run it today |
 
 **Recommendation: PostgreSQL** (decided Oct 2026). It's the upstream lean and closer to how DB2-minded developers think. Being stricter also catches bad SQL in dev instead of silently coercing it in prod. The extra one-time work is small: add the JDBC jar, a prod conf, a dev script, and backup scripts.
 
-> ⚠️ **Nobody tests Aspen on Postgres (or MySQL) today.** Dev runs on H2, and legacy clients run DB2i. Example: `aspen/entity/AspenViewEntities.xml:573` (`daysOut`) emits `DATEDIFF(...)` on Postgres, which doesn't exist there (fix in progress). **Before the first go-live, run the full Aspen/Basalt test suite plus a click-through on Postgres** and fix the dialect gaps.
+> Postgres status (Oct 2026): the dialect gaps found so far are fixed (`daysOut`, `month()`/`YEAR()`, `daysSinceLastWorked`, check-number joins) and the full suite passes on local Postgres 17 and 18 (`gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml`). Still open: 15 numeric `text-find` search fields that become `numeric LIKE` (see the Valhalla plan's dialect table). Dev still defaults to H2, so **run the Postgres suite before every release**.
 
 ## 2. Azure infrastructure (baseline for a ~10-user, <50 orders/day client)
 
@@ -186,6 +189,7 @@ The Bitronix transaction manager server ID needs no setup. Bitronix stamps every
 Local check before every release: `gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml` (Docker/Colima running). ⚠️ `gitPullAll` only logs a failed pull and carries on (e.g. uncommitted local edits that overlap incoming changes), so a run can mix new components with an old framework: check the `Pulling ...` lines for errors, or that `git -C <repo> status` is up to date in every repo, before trusting the result. With a Postgres dev conf, `cleanDb` resets the **local** Postgres DB via `cleanPostgres.sh` (always 127.0.0.1, ignores `PG*` env vars) and leaves H2 alone; it refuses any conf whose name contains `Production`.
 
 ### 3.4 systemd `/etc/systemd/system/aspen.service`
+Exact, current versions of the unit, `aspen.env` and the nginx site are in INSTALL.md phases 9, 14 and 15; this section explains them.
 Heap: about half the VM's RAM. `-Xms2g -Xmx4g` on D2as_v6 (8 GiB); raise to `-Xms4g -Xmx8g` if the VM is resized to D4as_v6 (16 GiB).
 ```
 [Unit]
@@ -225,8 +229,8 @@ entity_ds_crypt_pass=          # fresh per client (openssl rand -base64 32), sav
 default_time_zone=America/Los_Angeles
 database_time_zone=America/Los_Angeles
 instance_purpose=production
-webapp_https_enabled=false     # while testing through an SSH tunnel; with nginx + TLS: true, plus
-                               # webapp_http_host=<domain> and webapp_client_ip_header=X-Real-IP
+webapp_https_enabled=false     # until nginx + TLS are in front; then true, plus webapp_http_host=<domain>,
+                               # webapp_http_port=80, webapp_https_port=443, webapp_client_ip_header=X-Real-IP
 ```
 ⚠️ **Moqui's Jetty binds 8080 on all interfaces** (`MoquiStart.java` sets only the port, never the host), so the VM firewall must close it; otherwise anything that can reach the VM bypasses nginx and can forge `X-Real-IP` (defeats login lockout, pollutes audit/visit data):
 ```
@@ -237,10 +241,10 @@ sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
 sudo ufw --force enable      # 8080 stays closed to everything but loopback (nginx)
 sudo ufw status verbose
 ```
-Keep the NSG tight: SSH from SSS office IPs only, 80/443 opened only once nginx + the certificate are ready, never inbound 8080, so a loosened rule in one place isn't enough on its own. nginx terminates TLS (`certbot --nginx`, auto-renew) and proxies with `X-Real-IP`, `X-Forwarded-Proto https`, and `client_max_body_size 50m`. fail2ban watches nginx for login floods.
+Keep the NSG tight: SSH from SSS office IPs only, 80/443 opened only once nginx + the certificate are ready, never inbound 8080, so a loosened rule in one place isn't enough on its own. nginx terminates TLS with a Let's Encrypt certificate from `certbot certonly --webroot` (nginx config written by hand, not by `certbot --nginx`; renewals by `certbot.timer` plus a deploy hook that reloads nginx) and proxies with `X-Real-IP`, `X-Forwarded-Proto https`, websocket upgrade and `client_max_body_size 50m`; exact config in INSTALL.md phase 14. fail2ban runs its default `sshd` jail; an nginx login-flood jail is ⏳.
 
 ### 3.5 First data load
-Load `seed,seed-initial,install` (no demo) against the Azure DB from the VM, then client setup (org, chart of accounts, fiscal periods, users), then opening balances (D3). **Do a full dry run first** on a throwaway DB, and time it.
+Nothing to run: on an **empty** database Moqui's first start creates the tables and loads `entity_empty_db_load` = `seed,seed-initial,install` (framework default, no demo data). On Valhalla: 644 tables, 22,133 records, 105 s total on D2as_v6 + B2s. Client components whose data uses their own load types (e.g. Gebbers' `seed-gebbersCommon`, `install-gebbersFarms`) are in the WAR but load nothing. After that: client setup (org, chart of accounts, fiscal periods, users), then opening balances (D3).
 
 ### 3.6 Attachments on Azure Files (D12): config only
 `UserFacadeImpl.getPreference()` checks **JVM system properties before the DB** (`framework/src/main/groovy/org/moqui/impl/context/UserFacadeImpl.groovy:389`), so there are no code or data changes:
@@ -248,7 +252,7 @@ Load `seed,seed-initial,install` (no demo) against the Azure DB from the VM, the
 2. Mount over SMB 3 via `/etc/fstab` (`cifs`, `uid=aspensvc,gid=aspensvc,file_mode=0640,dir_mode=0750`, credentials file chmod 600) at `/mnt/aspen-content`.
 3. Add to `ExecStart`: `-Dmantle.content.root=file:/mnt/aspen-content -Dmantle.content.large.root=file:/mnt/aspen-content`.
 4. Azure Backup for the file share (daily, 30+ days) + soft delete.
-5. ❓ Dry run: upload and download an attachment on an order and a project.
+5. ⏳ Verify: upload and download an attachment on an order and a project (exact steps: INSTALL.md phase 17).
 
 Only **new** uploads go to the new root, because content records store full locations. So set it **before go-live**.
 

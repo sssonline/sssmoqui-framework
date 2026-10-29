@@ -1,7 +1,7 @@
 # Valhalla — Azure Deployment Plan
 
 Follows `docs/azure/AZURE_DEPLOY_GUIDE.md`. This file records only this client's choices and what's still open.
-Every command and portal step of the actual install is in `valhalla-install-log.md`.
+Every command and portal step of the actual install is in `valhalla-install-log.md`. The clean, reusable procedure is `../INSTALL.md`.
 
 ## Decisions so far
 
@@ -17,7 +17,7 @@ Every command and portal step of the actual install is in `valhalla-install-log.
 | D8 | Subscription | SSS's Azure subscription | Firm |
 | D9 | Run style | JVM + systemd + nginx (no Docker yet) | Firm |
 | D10 | Environments | Prod only, off-hours deploys. **Always on** (no VM auto-shutdown, DB never stopped) | Firm |
-| D11 | Email | Needed. Recommend Azure Communication Services Email | Pending domain (D14) |
+| D11 | Email | Needed. Recommend Azure Communication Services Email | Pending: sender domain. If Valhalla's own domain, their IT/DNS owner supplies the INSTALL.md phase 18 "Collect first" items (2026-10-28) |
 | D12 | Attachments | Used regularly → **Azure Files** (config only, guide §3.6) | Firm, set before go-live |
 | D13 | Region / TZ | **West US 3 (Phoenix)**: ~10–15 ms from SoCal, has availability zones, newer SKUs, usually cheaper than West US (N. Calif.). TZ `America/Los_Angeles` | Firm (D2as_v6 and PG B2s both available there) |
 | D14 | Domain | **`valhalla.spokanesoftware.com`** (SSS domain). DNS on Cloudflare (registrar GoDaddy): explicit `A` record → VM IP, **DNS only** (grey cloud) to start; there is a proxied wildcard `*.spokanesoftware.com` that redirects to sssonline.com, which the explicit record overrides | Decided 2026-10-19 |
@@ -49,33 +49,44 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | DNS | Cloudflare `A valhalla.spokanesoftware.com → 20.25.186.24`, DNS only | ✅ 2026-10-19 |
 | TLS | Let's Encrypt (YE1) via certbot webroot, expires 2027-01-18, auto-renew (certbot.timer + `renewal-hooks/deploy/reload-nginx`, dry run OK); nginx 443 → 127.0.0.1:8080 | ✅ 2026-10-20 |
 | Live URL | **https://valhalla.spokanesoftware.com** (admin account created; SSH alias `valhalla` on Ian's Mac) | ✅ 2026-10-20 |
-| Skipped for now | Budget alert, Key Vault, VM backup, Azure Files storage account, DNS record | add before go-live as needed (guide §2) |
+| Storage account | `stvalhallaaspen`: StorageV2, Standard, GZRS (secondary East US), Hot, VM-subnet + office-IP network rules, soft delete 30 days; for the `aspen-content` file share (attachments) and `db-backups` container (monthly exports) | ✅ 2026-10-28: account, `aspen-content` share (quota 100 GiB), `db-backups` container (private). VM mount + Aspen config pending (CLI) |
+| Budget | `valhalla-monthly` $175, alerts actual 80/100%, forecast 100% | ✅ 2026-10-28 |
+| Postgres maintenance window | custom: Sunday 02:00 Pacific | ✅ 2026-10-28 |
+| Azure access | Ian: Contributor on `rg-aspen-valhalla-prod` (2026-10-28). To do: confirm ≥2 Owners on subscription Spokane_Main (break-glass), MFA on both; per-person VM SSH keys; VM key into the SSS password manager | ⏳ |
+| Skipped for now | Key Vault | add later as needed (guide §2). Budget, storage account and DNS are now done |
+| Not doing | VM backup (Recovery Services vault) | Decided 2026-10-28: the VM is rebuilt from the runbook and a release. Data lives in Postgres (35-day geo PITR) and Azure Files |
+| Monitoring cost | ~$5–12/mo | Estimate 2026-10-28: availability test ~$5/location/mo at 5-min runs (use 1–2 locations); 7 alert rules <$1; emails free; logs within free 5 GB |
 
 ## Open questions (ask the client or decide internally)
-- [x] IT contact: **SSS is Valhalla's IT** (they have no IT staff). So DNS, email sender setup, user accounts and support all land on us
+- [x] IT contact: **SSS is Valhalla's IT** (they have no IT staff). So DNS, email sender setup, user accounts and support all land on us. Exception (2026-10-28): Valhalla's own email domain is handled by a separate IT department; email details are being requested from them
 - [ ] D3: exactly what comes over at go-live (GL trial balance as of cutover date? open AR invoices? open AP? inventory on hand + cost?) and from what system/format
 - [x] D14: `valhalla.spokanesoftware.com`. Email sender domain still open: spokanesoftware.com mail is on Microsoft 365 (MX `spokanesoftware-com.mail.protection.outlook.com`), so ACS sending from it needs SPF/DKIM records added in Cloudflare alongside M365's
 - [ ] Integrations: payment gateway? EDI with any trading partners? bank feeds? (each adds outbound/inbound network rules)
 - [x] Printers: no direct printer integration; printing is browser PDF
 - [ ] Business hours → maintenance/deploy window (proposal: Sun 2–5am PT)
-- [ ] Who at SSS holds production access (SSH keys, Azure RBAC), plus a break-glass account
-- [ ] Budget sign-off on ~$220–325/mo
+- [ ] Who at SSS holds production access (SSH keys, Azure RBAC), plus a break-glass account. The VM key currently exists only on Ian's Mac: copy it into the SSS password manager
+- [ ] Budget sign-off on ~$130–140/mo (start-small sizing); Azure budget alert at $175 (INSTALL.md phase 16)
 
 ## Pre-go-live work (SSS)
-1. [ ] **Postgres readiness**: JDBC jar, confs, `devPostgres.sh`/`cleanPostgres.sh` and dialect fixes are done; full suite passed on Postgres 17 (261 tests). ⏳ Re-run on Postgres 18 after pulling the Simple Report framework changes. Open: 15 numeric `text-find` search fields (see dialect table)
-2. [x] `MoquiProductionConfPostgres.xml` + `prodPostgres.sh` created (secrets via env vars). Aligned with the prod credentials card ([Trello](https://trello.com/c/BfaA2YNv)): same env-var mechanism for Saticoy, deploy WAR packs only allowlisted secret-free confs, conf ships inside each release (guide §3.2)
-3. [x] Spike: XA on Azure Postgres: `max_prepared_transactions=100` accepted + restart (2026-10-19). Also set `log_min_duration_statement=2000`, `idle_in_transaction_session_timeout=600000`; `require_secure_transport` ON, `timezone` UTC left at defaults
-4. [ ] Provision Azure (guide §3.1), with geo-redundant backup + private networking chosen at creation
-5. [ ] Release tagging across all repos + build of `moqui-plus-runtime.war`
-6. [ ] Bitronix server ID: nothing to set (guide §3.3). Confirm the first start logs `Bitronix transaction manager server ID: aspen-<host>-<hex> (from .../txlog/server-id)`, that `shared/txlog` was not copied from the sim or another instance, and that the ID is unchanged after the next restart
-7. [ ] Dry-run install + data load on a throwaway DB, and time it; build the Postgres root CA bundle and confirm `verify-full` connects (guide §3.2)
-8. [ ] Azure Files attachments verified (upload/download)
-9. [ ] ACS Email set up + domain verified; test password reset & invoice email
-10. [ ] Pause unused ServiceJobs (payroll, SFTP polling, Ziret demos)
-11. [ ] Monitoring + alerts + Sentry prod environment
-12. [ ] **Restore drill** (PITR → new server → app boots → log in)
-13. [ ] Opening balance load + client sign-off on trial balance
-14. [ ] Go-live; first week watch logs daily
+Phase numbers refer to `../INSTALL.md`.
+
+1. [x] **Postgres readiness**: confs, JDBC jar, scripts, dialect fixes; full suite green on local Postgres 18 (2026-10-19, after pulling the Simple Report framework changes). Open: 15 numeric `text-find` search fields (dialect table)
+2. [x] `MoquiProductionConfPostgres.xml` + `prodPostgres.sh` (secrets via env vars), aligned with the prod credentials card ([Trello](https://trello.com/c/BfaA2YNv)): allowlisted secret-free confs ship inside each release
+3. [x] XA on Azure Postgres: `max_prepared_transactions=100` accepted + restart (2026-10-19)
+4. [x] Provision Azure: VM, DB subnet, Postgres 18 B2s with geo-redundant backup + private access (phases 1–4, 2026-10-19)
+5. [x] First release built and deployed: `2026-10-19_06cbcf0d` with `RELEASE.txt` (phase 8). Release **tags** across repos still to do before the next release
+6. [x] Bitronix server ID `aspen-vm-aspen-valhalla-3873d455`, unchanged across 5 starts; `shared/txlog` is the VM's own
+7. [x] First start + data load (105 s), TLS `verify-full` to Postgres, admin account, HTTPS live at https://valhalla.spokanesoftware.com (phases 5–15, 2026-10-19/20)
+8. [x] Budget alert (phase 16)
+9. [ ] Azure Files attachments, verified with an upload/download, **before any user uploads** (phase 17)
+10. [ ] ACS Email + spokanesoftware.com SPF/DKIM; test password reset and an invoice email (phase 18). Decide the sender address
+11. [ ] Pause unused ServiceJobs (phase 19)
+12. [x] Monitoring + alerts (phase 20, 2026-10-29). [ ] Sentry prod environment
+13. [ ] Long-term backups + **restore drill** (phase 21)
+14. [ ] Practice release + rollback (INSTALL.md "Deploying a new release")
+15. [ ] fail2ban nginx jail for login floods
+16. [ ] Valhalla setup data (org, chart of accounts, fiscal periods, users/roles), opening balances (D3), client sign-off on the trial balance
+17. [ ] Go-live; watch logs daily for the first week
 
 ## Postgres dialect fixes (from code sweep, Oct 2026)
 | Status | Where | Problem on Postgres | Fix |
