@@ -48,6 +48,16 @@ along with this software (see the LICENSE.md file). If not, see
                 it is in. If true this screen will automatically be included in the parent's subscreens menu.
             </xs:documentation></xs:annotation>
         </xs:attribute>
+        <xs:attribute name="menu-condition" type="xs:string">
+            <xs:annotation><xs:documentation>
+                (SSS extension, #1184) Groovy condition evaluated whenever this screen is listed in its parent's menu or
+                subscreens tab row (menuData for the Vue client, and the html subscreens-menu/panel). If it evaluates to
+                false the screen is left out of the menu, whether it is a directory subscreen or a subscreens-item. Like
+                menu-include="false", the currently active subscreen is still listed in menuData. It only governs the
+                menu: a direct URL to the screen still resolves and renders, so guard data in services. Empty (the
+                default) means always listed. If the expression throws, the screen stays listed.
+            </xs:documentation></xs:annotation>
+        </xs:attribute>
         <xs:attribute name="menu-image" type="xs:string"/>
         <xs:attribute name="menu-image-type" default="url-screen">
             <xs:simpleType>

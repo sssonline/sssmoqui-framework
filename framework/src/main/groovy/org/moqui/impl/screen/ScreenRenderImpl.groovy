@@ -2359,6 +2359,9 @@ class ScreenRenderImpl implements ScreenRender {
                 if (!subscreensItem.menuInclude && subscreensItem.name != nextItem) continue
                 // valid in current context? (user group, etc)
                 if (!subscreensItem.isValidInCurrentContext()) continue
+                // SSS #1184: screen@menu-condition false leaves the tab out, but like menu-include="false" the ACTIVE
+                // subscreen (reached by direct URL) is still listed so the tab row and breadcrumb stay consistent
+                if (subscreensItem.name != nextItem && !subscreensItem.isMenuConditionMet()) continue
 
                 String screenPath = new StringBuilder(currentPath).append('/').append(StringUtilities.urlEncodeIfNeeded(subscreensItem.name)).toString()
                 UrlInstance screenUrlInstance = buildUrl(screenPath)

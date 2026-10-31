@@ -83,8 +83,9 @@ class MoquiFopServlet extends HttpServlet {
                     .rootScreenFromHost(request.getServerName()).screenPath(pathInfoList)
             xslFoText = sr.render()
 
+            // the document's own data step refused (a user-facing message, not a crash): show it on a plain page
             if (ec.message.hasError()) {
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, ec.message.errorsString)
+                sendDocumentRefused(response, ec.message.getErrors())
                 return
             }
 
@@ -135,7 +136,11 @@ class MoquiFopServlet extends HttpServlet {
             if (ec.message.hasError()) {
                 String errorsString = ec.message.errorsString
                 logger.error(errorsString, t)
-                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, errorsString)
+                if (!response.isCommitted()) sendDocumentRefused(response, ec.message.getErrors())
+                else response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, errorsString)
+            } else if (!response.isCommitted()) {
+                // no message to show (e.g. a document with no pages): still a readable page, the details are in the log above
+                sendDocumentRefused(response, ["The document could not be produced. Please contact Aspen Support if this keeps happening."])
             } else {
                 throw t
             }
@@ -143,5 +148,24 @@ class MoquiFopServlet extends HttpServlet {
             // make sure everything is cleaned up
             ec.destroy()
         }
+    }
+
+    /** A document that can't be produced answers with a small readable page naming why (the messages its screen actions
+     * added), never a bare HTTP 500 error page. 422: the request was understood but this document can't be made from it. */
+    protected static void sendDocumentRefused(HttpServletResponse response, List<String> errors) {
+        response.reset()
+        response.setStatus(422)
+        response.setContentType("text/html")
+        response.setCharacterEncoding("UTF-8")
+        StringBuilder sb = new StringBuilder()
+        sb.append("<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+        sb.append("<title>This document can't be printed</title></head>")
+        sb.append("<body style=\"font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; margin: 40px;\">")
+        sb.append("<h3>This document can't be printed</h3><ul>")
+        for (String err in errors) sb.append("<li>").append(StringUtilities.encodeForXmlAttribute(err ?: "")).append("</li>")
+        sb.append("</ul><p><button type=\"button\" onclick=\"if (history.length &gt; 1) { history.back(); } else { window.close(); }\">Go Back</button></p>")
+        sb.append("</body></html>")
+        // the output stream, not a writer: on the transform-failure path the stream may already be the one in use
+        response.getOutputStream().write(sb.toString().getBytes("UTF-8"))
     }
 }

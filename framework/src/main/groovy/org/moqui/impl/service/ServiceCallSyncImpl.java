@@ -628,7 +628,9 @@ public class ServiceCallSyncImpl extends ServiceCallImpl implements ServiceCallS
                 }
             } finally {
                 try {
-                    if (beganTransaction && tf.isTransactionActive()) tf.commit();
+                    // a pre-service SECA or nested service error leaves the TX marked rollback-only (not active): close it too,
+                    // as the regular service path does (commit() rolls back a rollback-only TX), or it stays open on the thread
+                    if (beganTransaction && (tf.isTransactionActive() || tf.getStatus() == Status.STATUS_MARKED_ROLLBACK)) tf.commit();
                 } catch (Throwable t) {
                     logger.warn("Error committing transaction for entity-auto service " + serviceName, t);
                     // add all exception messages to the error messages list

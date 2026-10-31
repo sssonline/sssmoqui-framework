@@ -57,6 +57,9 @@ class ScreenDefinition {
     @SuppressWarnings("GrFinalVariableAccess") final long screenLoadedTime
     protected boolean standalone = false
     protected boolean allowExtraPath = false
+    /** screen@menu-condition (SSS #1184): when set and false, this screen is left out of its parent's menu (tab row);
+     *  null (no attribute, the default) = always in the menu, exactly as before. See isMenuConditionMet(). */
+    protected String menuCondition = null
     protected Set<String> renderModes = null
     protected Set<String> serverStatic = null
     Long sourceLastModified = null
@@ -208,6 +211,8 @@ class ScreenDefinition {
 
         standalone = "true".equals(screenNode.attribute("standalone"))
         allowExtraPath = "true".equals(screenNode.attribute("allow-extra-path"))
+        String menuConditionAttr = screenNode.attribute("menu-condition")
+        if (menuConditionAttr != null && !menuConditionAttr.trim().isEmpty()) menuCondition = menuConditionAttr.trim()
         String renderModesStr = screenNode.attribute("render-modes") ?: "all"
         renderModes = new HashSet(Arrays.asList(renderModesStr.split(",")).collect({ it.trim() }))
         String serverStaticStr = screenNode.attribute("server-static")
@@ -482,6 +487,20 @@ class ScreenDefinition {
     boolean isStandalone() { return standalone }
     boolean isServerStatic(String renderMode) { return serverStatic != null && (serverStatic.contains('all') || serverStatic.contains(renderMode)) }
 
+    /** SSS #1184: evaluates screen@menu-condition in the current context. Used ONLY where menus/tab rows are built
+     *  (ScreenRenderImpl.getMenuData, getMenuSubscreensItems), never for URL resolution, authorization or rendering, so a
+     *  direct URL to a screen whose condition is false still resolves and renders as before. No attribute = true. If the
+     *  expression throws, the screen stays in the menu (today's behavior) and a warning is logged. */
+    boolean isMenuConditionMet(ExecutionContextImpl eci) {
+        if (menuCondition == null) return true
+        try {
+            return eci.resourceFacade.condition(menuCondition, location + ".menu_condition")
+        } catch (Throwable t) {
+            logger.warn("Error evaluating menu-condition of screen ${location}, leaving it in the menu: ${t.toString()}")
+            return true
+        }
+    }
+
     String getDefaultMenuName() { return getPrettyMenuName(screenNode.attribute("default-menu-title"), location, sfi.ecfi) }
     static String getPrettyMenuName(String menuName, String location, ExecutionContextFactoryImpl ecfi) {
         if (menuName == null || menuName.isEmpty()) {
@@ -672,6 +691,8 @@ class ScreenDefinition {
             if (!si.menuInclude) continue
             // valid in current context? (user group, etc)
             if (!si.isValidInCurrentContext()) continue
+            // SSS #1184: the subscreen's screen@menu-condition (no attribute = always true)
+            if (!si.isMenuConditionMet()) continue
             // made it through the checks? add it in...
             filteredList.add(si)
         }
@@ -1315,6 +1336,14 @@ class ScreenDefinition {
             if (userGroupId && !(userGroupId in eci.getUser().getUserGroupIdSet())) return false
 
             return true
+        }
+        /** SSS #1184: the target screen's screen@menu-condition, for menu building only (NOT part of
+         *  isValidInCurrentContext, which also guards rendering). True when the screen has no condition or can't be loaded
+         *  here (a broken location fails later exactly as before). */
+        boolean isMenuConditionMet() {
+            ScreenDefinition subSd = null
+            try { subSd = parentScreen.sfi.getScreenDefinition(location) } catch (Throwable t) { return true }
+            return subSd == null || subSd.isMenuConditionMet(parentScreen.sfi.getEcfi().getEci())
         }
     }
 
