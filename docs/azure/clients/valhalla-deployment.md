@@ -17,7 +17,7 @@ Every command and portal step of the actual install is in `valhalla-install-log.
 | D8 | Subscription | SSS's Azure subscription | Firm |
 | D9 | Run style | JVM + systemd + nginx (no Docker yet) | Firm |
 | D10 | Environments | Prod only, off-hours deploys. **Always on** (no VM auto-shutdown, DB never stopped) | Firm |
-| D11 | Email | Needed. Recommend Azure Communication Services Email | Pending: sender domain. If Valhalla's own domain, their IT/DNS owner supplies the INSTALL.md phase 18 "Collect first" items (2026-10-28) |
+| D11 | Email | Needed. Recommend Azure Communication Services Email | **ACS Email** chosen 2026-11-02 (~$0.40/mo vs Postmark $15/mo), sender `DoNotReply@valhallasales.com`, Reply-To `joann@valhallasales.com` for now (per-template setting, SSS can change it in minutes), Valhalla's IT adds the DNS records. ACS retires 2028-09-30: **move to another provider before then** (new SMTP settings + DNS) |
 | D12 | Attachments | Used regularly → **Azure Files** (config only, guide §3.6) | Firm, set before go-live |
 | D13 | Region / TZ | **West US 3 (Phoenix)**: ~10–15 ms from SoCal, has availability zones, newer SKUs, usually cheaper than West US (N. Calif.). TZ `America/Los_Angeles` | Firm (D2as_v6 and PG B2s both available there) |
 | D14 | Domain | **`valhalla.spokanesoftware.com`** (SSS domain). DNS on Cloudflare (registrar GoDaddy): explicit `A` record → VM IP, **DNS only** (grey cloud) to start; there is a proxied wildcard `*.spokanesoftware.com` that redirects to sssonline.com, which the explicit record overrides | Decided 2026-10-19 |
