@@ -79,10 +79,10 @@ Phase numbers refer to `../INSTALL.md`.
 7. [x] First start + data load (105 s), TLS `verify-full` to Postgres, admin account, HTTPS live at https://valhalla.spokanesoftware.com (phases 5–15, 2026-10-19/20)
 8. [x] Budget alert (phase 16)
 9. [ ] Azure Files attachments, verified with an upload/download, **before any user uploads** (phase 17)
-10. [ ] ACS Email + spokanesoftware.com SPF/DKIM; test password reset and an invoice email (phase 18). Decide the sender address
-11. [ ] Pause unused ServiceJobs (phase 19)
+10. [x] ACS Email on `valhallasales.com`, sender `DoNotReply@valhallasales.com` as "Valhalla Sales", SPF/DKIM/DMARC passing (phase 18). **Still to do once users are on:** test a password reset and an invoice email
+11. [x] Pause unused ServiceJobs; job errors email support@sssonline.com, untested (phase 19)
 12. [x] Monitoring + alerts (phase 20, 2026-10-29). [ ] Sentry prod environment
-13. [ ] Long-term backups + **restore drill** (phase 21)
+13. [ ] Long-term backups ✅ (monthly to `db-backups`, first 2026-11-03); immutability + **restore drill** still open (phase 21)
 14. [ ] Practice release + rollback (INSTALL.md "Deploying a new release")
 15. [ ] fail2ban nginx jail for login floods
 16. [ ] Valhalla setup data (org, chart of accounts, fiscal periods, users/roles), opening balances (D3), client sign-off on the trial balance

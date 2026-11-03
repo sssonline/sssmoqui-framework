@@ -476,14 +476,14 @@ Before editing: `nc -zvw3 $SA.file.core.windows.net 445` must succeed, and back 
 3. Database (read-only; as root with aspen.env's `entity_ds_*` vars): `select content_location from shipment_content where shipment_id = '<id>'` shows `file:/mnt/aspen-content/...`, and `select count(*) from db_resource_file` is 0. The database setting `mantle.content.root` still says `dbresource://...`, which is expected because the JVM flag overrides it.
 4. Portal → storage account → File shares → `aspen-content` → Browse shows the file.
 
-## 18. Email ⏳ (portal + Cloudflare + Aspen)
+## 18. Email ✅ (portal + DNS + Aspen; Valhalla: password reset and invoice tests still open)
 
 Azure blocks outbound port 25; Aspen sends through Azure Communication Services (ACS) over SMTP 587.
 
 > ⚠️ **ACS is retiring (found 2026-11-02). Valhalla stays on it as the cheap option; pick another provider for new clients.** Microsoft is retiring ACS Email on **2028-09-30** and advises against onboarding new workloads (maintenance mode; new resources allowed "subject to change"). M365 options don't replace it for Aspen: High Volume Email is internal recipients only; SMTP relay via connector isn't allowed from Azure-hosted services and needs port 25; SMTP AUTH basic auth goes default-off end of December 2026 with removal to follow, and Moqui's sender uses username/password, not OAuth. Whatever the provider, Aspen needs the from-address work below.
 > ACS limits if used: 30/min and 100/hour per subscription, 10 MB per message including attachments (about 7.5 MB of files), and on a custom domain with default limits only `DoNotReply@` works: a custom sender such as `aspen@` needs a quota increase first (up to 72 hours, case by case during retirement). Assigning *Communication and Email Service Owner* to the Entra app needs Owner / User Access Administrator; RG Contributor can't.
 
-**Aspen from addresses (any provider).** Providers reject senders they haven't approved, and the seeded templates fall back to `sssemail@sssonline.com` (`PAYMENT_RUN_INCOMPLETE`: `accounting@test.com`; `NOTIFICATION`, `SCREEN_RENDER`: blank, which errors). Payment and payroll advice use the company party's primary email as From. So set every `EmailTemplate` from address to an approved sender and `replyToAddresses` to a mailbox a person reads, and make sure the company email is on the verified domain. Edits persist: seed-initial data is only added if missing. SMTP settings: Aspen → Setup → Server Setup (`EmailServer` SYSTEM; the password is stored encrypted), which also has **Test Email Server**.
+**Aspen from addresses (any provider).** Providers reject senders they haven't approved, and the seeded templates use `${fromAddress?:'sssemail@sssonline.com'}` (`PAYMENT_RUN_INCOMPLETE`: `accounting@test.com`; `NOTIFICATION`, `SCREEN_RENDER`: blank, which errors). Payment and payroll advice pass the company party's primary email as `fromAddress`, so keeping that expression can produce an unapproved From. Set every `EmailTemplate` from address to the approved sender as a **literal** (it then ignores what the caller passes) and `replyToAddresses` to a mailbox a person reads. Edits persist: seed-initial data is only added if missing.
 
 **Collect first** (from whoever runs the sender domain's DNS and mail; nothing needed if sending from `spokanesoftware.com`):
 - Sender domain, and whether to send from the root domain or a subdomain (e.g. `mail.<client-domain>`; a subdomain keeps ACS's SPF/DMARC changes away from the client's normal mail).
@@ -491,16 +491,38 @@ Azure blocks outbound port 25; Aspen sends through Azure Communication Services 
 - Who adds DNS records, and how quickly: 1 TXT (verification), SPF change, 2 DKIM CNAMEs. ACS shows the exact values only after the domain is added in step 1.
 - Their mail host (Microsoft 365, Google, other) and **current SPF and DMARC records** (`dig +short TXT <domain>`, `dig +short TXT _dmarc.<domain>`). There must stay exactly one `v=spf1` record.
 - Not needed: any mailbox password or M365 admin access. ACS sends on its own.
-1. Portal: **Email Communication Services → + Create** in `<rg>` (data location United States) → **Provision domains → Add a custom domain** `spokanesoftware.com` (or the client's domain). Add the **TXT verification** record it shows in Cloudflare → Verify.
-2. Add the **SPF** and **DKIM** records it shows (DKIM = two CNAMEs). ⚠️ `spokanesoftware.com` mail runs on Microsoft 365: there must be **one** SPF TXT record. Check it first (`dig +short TXT spokanesoftware.com | grep spf1`); if it already contains `include:spf.protection.outlook.com`, ACS's requirement is likely already met — never add a second `v=spf1` record.
-3. **Communication Services → + Create** (same data location) → **Email → Domains → Connect domain**. Under the email domain, **MailFrom addresses**: add the sender (e.g. `aspen@spokanesoftware.com`).
-4. SMTP credentials: **Entra ID → App registrations → New** `aspen-<client>-smtp` → **Certificates & secrets → New client secret** (note its expiry; calendar a renewal). On the Communication Services resource: **Access control (IAM)** → grant the app a role that allows sending email, then **SMTP Usernames → Add** (Entra app → username). SMTP host `smtp.azurecomm.net`, port 587, STARTTLS, username = the SMTP username, password = the client secret.
-5. Aspen: **System → Email Servers → SYSTEM**: SMTP host/port/STARTTLS/username/password, from address = the MailFrom address.
-**Verify**: trigger a password reset to an SSS mailbox; check it arrives and passes SPF/DKIM (view headers).
+1. Portal: **Create a resource → Email Communication Services** in `<rg>` (data location United States) → **Provision domains → Add domain → Custom domain** → the client's domain. Send the **TXT verification** record it shows, plus the two DKIM CNAMEs, to whoever runs DNS, then **Verify**. Check with `dig` before clicking. Compare the DKIM values with the portal once the domain is verified.
+2. **SPF:** there must stay exactly **one** `v=spf1` record. If it already has `include:spf.protection.outlook.com`, change nothing, even if it has other includes. Provision domains should show Domain, SPF, DKIM and DKIM2 all **Verified**.
+3. **Create a resource → Communication Services** `acs-aspen-<client>` (same RG and data location) → **Email → Domains → Connect domains** → pick the email service and domain → status **Connected**.
+4. **Entra ID → App registrations → New registration** `aspen-<client>-smtp`, single tenant, no redirect URI. **Certificates & secrets → New client secret**, 24 months: copy the **Value** straight into the password manager and calendar the renewal, because Aspen silently stops sending when it lapses.
+5. On `acs-aspen-<client>`, an **Owner** assigns the role: **Access control (IAM) → Add role assignment → Communication and Email Service Owner → User, group, or service principal** (not Managed identity) → the app. Direct assignment only, not through a group. The SMTP Usernames form offers the same assignment through its **Assign Role** button.
+6. **Settings → SMTP Usernames → Add:** the Entra app, type **Email** (Custom text rejects `@`), `DoNotReply` @ the client's domain → **Ready to use**. This is the login, separate from the From address, but keep them the same to avoid confusion.
+7. Aspen: **Setup → Server Setup → Update Email Server** (`SYSTEM`): host `smtp.azurecomm.net`, port `587`, username = the SMTP username, password = the client secret, entered by a person (stored encrypted, shown in plain text on the form).
+8. On the VM, the form has no STARTTLS field, so use psql (see "Operations quick reference" for connecting), with the client's sender and reply-to:
+   ```sql
+   update email_server set smtp_start_tls='Y', smtp_ssl='N', last_updated_stamp=now() where email_server_id='SYSTEM';
+   update email_template set from_address='DoNotReply@<client-domain>', reply_to_addresses='<mailbox>', last_updated_stamp=now();
+   ```
+9. Both entities are cached: **System → Cache**, filter `email`, **Clear** each row (a restart also works).
 
-## 19. Pause unneeded scheduled jobs ⏳ (Aspen)
+**Verify**: Setup → Server Setup → **Test Email Server** (reuses the Purchase Order template, so the subject says "Purchase Order"; the green message only means queued). Check the headers show `spf=pass`, `dkim=pass` and `dmarc=pass` for the client's domain, then trigger a password reset and an invoice email. ACS replaces the template's sender name with the MailFrom display name, so set it once for the client. The portal can't edit it; use Cloud Shell (Bash, no storage account needed):
+```bash
+az communication email domain sender-username update --subscription <subscription> -g <rg> --email-service-name email-aspen-<client> --domain-name <client-domain> --sender-username donotreply --display-name "<Client Name>"
+```
 
-**System → Service Jobs**: pause every job for modules the client doesn't use (Valhalla: payroll and time-period jobs, iSeries imports, bank SFTP polling, Ziret demo jobs, payment-gateway polling unless a gateway is configured). Keep the framework cleanup jobs (`clean_ArtifactData_daily`, `clean_PrintJobData_daily`, `clean_ServiceJobRun_daily`). Route job-error notifications to SSS.
+## 19. Pause unneeded scheduled jobs ✅ (on the VM)
+
+Most `service_job` rows have no cron and only run on demand, and the seeds already pause the rest of the risky ones. List what actually runs:
+```sql
+select job_name, cron_expression from service_job where cron_expression is not null and coalesce(paused,'N')='N' order by 1;
+```
+Valhalla kept `clean_ArtifactData_daily`, `clean_PrintJobData_daily`, `clean_ServiceJobRun_daily`, `recalculate_GlAccountOrgSummaries` and `render_ScheduledScreens_frequent`, and paused `autoApprove_OrdersDelayed` and `create_RecurringOrders` (`update service_job set paused='Y' where job_name in (...)`; the scheduler reads this uncached). Unpause them only if the client uses delayed auto-approval or recurring orders.
+
+Job errors have no subscribers by default. Send them to the SSS admin user's email:
+```sql
+insert into notification_topic_user (topic, user_id, receive_notifications, all_notifications, email_notifications, last_updated_stamp)
+values ('ServiceJobError', '<admin-user-id>', 'Y', 'Y', 'Y', now());
+```
 **Verify**: after a day, System → Service Jobs → job runs show no recurring errors.
 
 ## 20. Monitoring and alerts ✅ (portal; Sentry still open)
@@ -527,10 +549,16 @@ Needs the providers from the prerequisites registered (a subscription Owner). Ta
 Cost (estimate, 2026-10-28; confirm in the pricing calculator): about **$5–12/month** total. The availability test is billed per run (~$0.0006–0.0007 each): every 5 min is ~8,600 runs/month per location, so ~$5 per location. Use 1–2 locations, not the default 5. Metric alert rules are ~$0.10/month per monitored series after 10 free, so the 7 rules cost under $1. Action-group emails are free at this volume. Log ingestion stays inside the 5 GB/month free allowance. Don't turn on VM Insights or diagnostic log export unless needed; those are the parts that grow.
 No VM backup (decided for Valhalla): the VM is rebuilt from the runbook and a release. Data is in Postgres (PITR) and Azure Files.
 
-## 21. Long-term backups and restore drill ⏳
+## 21. Long-term backups and restore drill ⏳ (backups ✅, immutability and drill open)
 - Automatic: 35-day point-in-time restore, geo-redundant (already on from phase 4).
-- Long-term: monthly `pg_dump -Fc` with `postgresql-client-18` from the VM to Blob storage (cool tier, immutable retention ~7 years for accounting records).
-- Restore drill before go-live: portal → Postgres → **Restore** to a new server at a point in time → point a copy of `aspen.env` at it → start Aspen → log in, open an attachment → delete the test server.
+- Long-term: monthly `pg_dump -Fc` from the VM to the `db-backups` container (Cool tier) with [backupPostgres.sh](backupPostgres.sh). It signs in with the VM's managed identity, so there is no storage secret to store or renew.
+  1. VM identity: **VM → Security → Identity → System assigned → On**. If the page shows "Something Unexpected Happened", use Cloud Shell: `az vm identity assign -g <rg> -n <vm>`.
+  2. An **Owner** assigns **Storage Blob Data Contributor** to the VM's identity on the `db-backups` container only (Containers → `db-backups` → Access Control (IAM) → Managed identity → Virtual machine).
+  3. On the VM: install the script as `/usr/local/sbin/backupPostgres.sh` (root, 0700), plus `/etc/systemd/system/aspen-db-backup.service` (`Type=oneshot`, `ExecStart=/usr/local/sbin/backupPostgres.sh st<client>aspen`, after `network-online.target`) and `aspen-db-backup.timer` (`OnCalendar=*-*-01 10:00:00 UTC`, `Persistent=true`, `WantedBy=timers.target`). `sudo systemctl daemon-reload`.
+  4. Test: `sudo systemctl start aspen-db-backup.service`, then `journalctl -u aspen-db-backup -n 5` should say `uploaded aspen-<timestamp>.dump`. Download it back and run `pg_restore -l` on it. Then `sudo systemctl enable --now aspen-db-backup.timer`.
+  5. Immutability, after the test passes: Containers → `db-backups` → **Access policy → Add policy → Time-based retention**, 2555 days (7 years, accounting records). If that page returns 403 (storage firewall), use Cloud Shell: `az storage container immutability-policy create -g <rg> --account-name st<client>aspen --container-name db-backups --period 2555 --allow-protected-append-writes false`. Locking the policy can't be undone, and a storage account holding locked blobs can't be deleted until they expire.
+  - No failure alert: a failed run shows only in the journal. Check the container for a new blob each month until alerting exists.
+- Restore drill before go-live: portal → Postgres → **Restore** to a new server at a point in time → point a copy of `aspen.env` at it → start Aspen → log in, open an attachment → delete the test server. Also restore one `pg_dump` file with `pg_restore` into a scratch database.
 
 ---
 
