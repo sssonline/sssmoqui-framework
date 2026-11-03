@@ -32,7 +32,7 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | Subscription | SSS | existing |
 | Resource group | `rg-aspen-valhalla-prod` (West US 3), tag `client=valhalla` | ✅ created by the VM wizard |
 | VM | `vm-aspen-valhalla`, Standard_D2as_v6, Ubuntu Server 24.04.5 LTS, Premium SSD 64 GiB, no auto-shutdown | ✅ 2026-10-19 |
-| VM admin login | `aspen`, key `~/.ssh/vm-aspen-valhalla_key.pem` (Ian's Mac; back it up to the SSS password manager). Moqui itself will run as the no-login service account `aspensvc` (guide §3.2) | ✅ |
+| VM admin login | `aspen`, key `~/.ssh/vm-aspen-valhalla_key.pem` (Ian's Mac; copy in the SSS password manager as `vm-aspen-valhalla_key`). Moqui itself will run as the no-login service account `aspensvc` (guide §3.2) | ✅ |
 | Public IP | `20.25.186.24` (static) | ✅ |
 | VNet | `vnet-westus3-1`, `172.16.0.0/16` (⚠️ overlaps the SSS office LAN `172.16.x.x`: no problem over the public IP, blocks a future office↔Azure VPN without rebuilding the DB subnet); VM subnet `snetwestus3-1` `172.16.0.0/24` (VM `172.16.0.4`) | ✅ |
 | DB subnet | `snet-db` `172.16.1.0/24`, delegated to `Microsoft.DBforPostgreSQL/flexibleServers` | ✅ |
@@ -52,7 +52,7 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | Storage account | `stvalhallaaspen`: StorageV2, Standard, GZRS (secondary East US), Hot, VM-subnet + office-IP network rules, soft delete 30 days; for the `aspen-content` file share (attachments) and `db-backups` container (monthly exports) | ✅ 2026-10-28: account, `aspen-content` share (quota 100 GiB), `db-backups` container (private). VM mount + Aspen config pending (CLI) |
 | Budget | `valhalla-monthly` $175, alerts actual 80/100%, forecast 100% | ✅ 2026-10-28 |
 | Postgres maintenance window | custom: Sunday 02:00 Pacific | ✅ 2026-10-28 |
-| Azure access | Ian: Contributor on `rg-aspen-valhalla-prod` (2026-10-28). To do: confirm ≥2 Owners on subscription Spokane_Main (break-glass), MFA on both; per-person VM SSH keys; VM key into the SSS password manager | ⏳ |
+| Azure access | Ian: Contributor on `rg-aspen-valhalla-prod` (2026-10-28). Break-glass Owners confirmed (2026-11-02). VM key in the SSS password manager (2026-11-03). To do: per-person VM SSH keys when a second admin needs access | ✅ |
 | Skipped for now | Key Vault | add later as needed (guide §2). Budget, storage account and DNS are now done |
 | Not doing | VM backup (Recovery Services vault) | Decided 2026-10-28: the VM is rebuilt from the runbook and a release. Data lives in Postgres (35-day geo PITR) and Azure Files |
 | Monitoring cost | ~$5–12/mo | Estimate 2026-10-28: availability test ~$5/location/mo at 5-min runs (use 1–2 locations); 7 alert rules <$1; emails free; logs within free 5 GB |
@@ -64,7 +64,7 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 - [ ] Integrations: payment gateway? EDI with any trading partners? bank feeds? (each adds outbound/inbound network rules)
 - [x] Printers: no direct printer integration; printing is browser PDF
 - [ ] Business hours → maintenance/deploy window (proposal: Sun 2–5am PT)
-- [ ] Who at SSS holds production access (SSH keys, Azure RBAC), plus a break-glass account. The VM key currently exists only on Ian's Mac: copy it into the SSS password manager
+- [x] Who at SSS holds production access (SSH keys, Azure RBAC), plus a break-glass account. Break-glass exists; VM key is in the SSS password manager. Per-person SSH keys when more admins need access.
 - [ ] Budget sign-off on ~$130–140/mo (start-small sizing); Azure budget alert at $175 (INSTALL.md phase 16)
 
 ## Pre-go-live work (SSS)
@@ -82,11 +82,17 @@ Phase numbers refer to `../INSTALL.md`.
 10. [x] ACS Email on `valhallasales.com`, sender `DoNotReply@valhallasales.com` as "Valhalla Sales", SPF/DKIM/DMARC passing (phase 18). **Still to do once users are on:** test a password reset and an invoice email
 11. [x] Pause unused ServiceJobs; job errors email support@sssonline.com, untested (phase 19)
 12. [x] Monitoring + alerts (phase 20, 2026-10-29). [ ] Sentry prod environment
-13. [ ] Long-term backups ✅ (monthly to `db-backups`, first 2026-11-03); 7-year immutability policy, unlocked by decision; **restore drill** still open (phase 21)
+13. [ ] Long-term backups ✅ (monthly to `db-backups`, first 2026-11-03); 7-year immutability policy, unlocked by decision; `backup-overdue` alert (not test-fired yet); **restore drill** still open (phase 21)
 14. [ ] Practice release + rollback (INSTALL.md "Deploying a new release")
 15. [ ] fail2ban nginx jail for login floods
 16. [ ] Valhalla setup data (org, chart of accounts, fiscal periods, users/roles), opening balances (D3), client sign-off on the trial balance
 17. [ ] Go-live; watch logs daily for the first week
+
+## Open tests (run once Valhalla's users are on)
+- [ ] Password reset email (phase 18)
+- [ ] Invoice email to a safe address (phase 18)
+- [ ] Job-error email to support@sssonline.com (phase 19; confirms on the first real job failure)
+- [ ] `backup-overdue` alert fires: threshold `1`, wait for the 12:00 UTC report, set back to `800` (phase 21)
 
 ## Postgres dialect fixes (from code sweep, Oct 2026)
 | Status | Where | Problem on Postgres | Fix |
