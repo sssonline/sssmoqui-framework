@@ -82,9 +82,9 @@ Phase numbers refer to `../INSTALL.md`.
 10. [x] ACS Email on `valhallasales.com`, sender `DoNotReply@valhallasales.com` as "Valhalla Sales", SPF/DKIM/DMARC passing (phase 18). **Still to do once users are on:** test a password reset and an invoice email
 11. [x] Pause unused ServiceJobs; job errors email support@sssonline.com, untested (phase 19)
 12. [x] Monitoring + alerts (phase 20, 2026-10-29). [ ] Sentry prod environment
-13. [ ] Long-term backups ✅ (monthly to `db-backups`, first 2026-11-03); 7-year immutability policy, unlocked by decision; `backup-overdue` alert (not test-fired yet); **restore drill** still open (phase 21)
+13. [ ] Long-term backups ✅ (monthly to `db-backups`, first 2026-11-03); 7-year immutability policy, unlocked by decision; `backup-overdue` alert (not test-fired yet); restore drill stopped 2026-11-03 by decision after Burstable restores were refused (`SkuNotAvailable`); emergency path is a General Purpose CLI restore, unproven (phase 21)
 14. [ ] Practice release + rollback (INSTALL.md "Deploying a new release")
-15. [ ] fail2ban nginx jail for login floods
+15. Optional (decided 2026-11-03, not a go-live blocker): fail2ban nginx jail that bans an IP sending too many login POSTs. Aspen already locks an account for 5 minutes after 3 bad passwords; the jail would add protection against one password tried across many accounts and against someone deliberately locking out users. fail2ban already runs with the `sshd` jail. Revisit with more users or repeated login attempts in the nginx log
 16. [ ] Valhalla setup data (org, chart of accounts, fiscal periods, users/roles), opening balances (D3), client sign-off on the trial balance
 17. [ ] Go-live; watch logs daily for the first week
 
