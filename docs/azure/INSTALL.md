@@ -444,7 +444,7 @@ The site is live. The tunnel is no longer needed.
 - Break-glass: **Subscriptions → (subscription) → Access control (IAM)**: at least **two** SSS people hold **Owner**, both with MFA, so one lost login never locks SSS out.
 - VM: store `<vm>_key.pem` in the SSS password manager; give each additional admin their own SSH key on the VM (append to `~<admin>/.ssh/authorized_keys`) and their office IP in the NSG SSH rule, so access can be revoked per person.
 
-## 16. Cost budget ⏳ (portal)
+## 16. Cost budget ✅ (portal)
 
 **Resource groups → `<rg>` → Cost Management → Budgets → + Add**: name `<client>-monthly`, monthly, amount **$175** (expected ~$130–140), alerts **Actual 80%**, **Actual 100%**, **Forecasted 100%** → SSS email, no action group → **Create**.
 Optional: **Cost Management → Cost alerts → Anomaly alerts → + Add** for the subscription.
@@ -549,14 +549,14 @@ Needs the providers from the prerequisites registered (a subscription Owner). Ta
 Cost (estimate, 2026-10-28; confirm in the pricing calculator): about **$5–12/month** total. The availability test is billed per run (~$0.0006–0.0007 each): every 5 min is ~8,600 runs/month per location, so ~$5 per location. Use 1–2 locations, not the default 5. Metric alert rules are ~$0.10/month per monitored series after 10 free, so the 7 rules cost under $1. Action-group emails are free at this volume. Log ingestion stays inside the 5 GB/month free allowance. Don't turn on VM Insights or diagnostic log export unless needed; those are the parts that grow.
 No VM backup (decided for Valhalla): the VM is rebuilt from the runbook and a release. Data is in Postgres (PITR) and Azure Files.
 
-## 21. Long-term backups and restore drill ⏳ (backups ✅, immutability and drill open)
+## 21. Long-term backups and restore drill ⏳ (backups and immutability ✅, drill open)
 - Automatic: 35-day point-in-time restore, geo-redundant (already on from phase 4).
 - Long-term: monthly `pg_dump -Fc` from the VM to the `db-backups` container (Cool tier) with [backupPostgres.sh](backupPostgres.sh). It signs in with the VM's managed identity, so there is no storage secret to store or renew.
   1. VM identity: **VM → Security → Identity → System assigned → On**. If the page shows "Something Unexpected Happened", use Cloud Shell: `az vm identity assign -g <rg> -n <vm>`.
   2. An **Owner** assigns **Storage Blob Data Contributor** to the VM's identity on the `db-backups` container only (Containers → `db-backups` → Access Control (IAM) → Managed identity → Virtual machine).
   3. On the VM: install the script as `/usr/local/sbin/backupPostgres.sh` (root, 0700), plus `/etc/systemd/system/aspen-db-backup.service` (`Type=oneshot`, `ExecStart=/usr/local/sbin/backupPostgres.sh st<client>aspen`, after `network-online.target`) and `aspen-db-backup.timer` (`OnCalendar=*-*-01 10:00:00 UTC`, `Persistent=true`, `WantedBy=timers.target`). `sudo systemctl daemon-reload`.
   4. Test: `sudo systemctl start aspen-db-backup.service`, then `journalctl -u aspen-db-backup -n 5` should say `uploaded aspen-<timestamp>.dump`. Download it back and run `pg_restore -l` on it. Then `sudo systemctl enable --now aspen-db-backup.timer`.
-  5. Immutability, after the test passes: Containers → `db-backups` → **Access policy → Add policy → Time-based retention**, 2555 days (7 years, accounting records). If that page returns 403 (storage firewall), use Cloud Shell: `az storage container immutability-policy create -g <rg> --account-name st<client>aspen --container-name db-backups --period 2555 --allow-protected-append-writes false`. Locking the policy can't be undone, and a storage account holding locked blobs can't be deleted until they expire.
+  5. Immutability, after the test passes: Containers → `db-backups` → **Access policy → Add policy → Time-based retention**, 2555 days (7 years, accounting records). If that page returns 403 (storage firewall), use Cloud Shell: `az storage container immutability-policy create -g <rg> --account-name st<client>aspen --container-name db-backups --period 2555 --allow-protected-append-writes false`. Leave the policy **unlocked** (Valhalla decision 2026-11-03): it blocks deleting or overwriting backups, while SSS can still remove it. Locking can't be undone, and a storage account holding locked blobs can't be deleted until they expire.
   - No failure alert: a failed run shows only in the journal. Check the container for a new blob each month until alerting exists.
 - Restore drill before go-live: portal → Postgres → **Restore** to a new server at a point in time → point a copy of `aspen.env` at it → start Aspen → log in, open an attachment → delete the test server. Also restore one `pg_dump` file with `pg_restore` into a scratch database.
 
