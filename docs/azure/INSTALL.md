@@ -567,18 +567,9 @@ No VM backup (decided for Valhalla): the VM is rebuilt from the runbook and a re
 
 ---
 
-## Deploying a new release ⏳ (procedure; first release was phase 8)
-1. Build and stage the new release exactly as in phase 8 (new `REL` name), **without** repointing `current` yet: skip the `ln -sfn ... /opt/aspen/current` line.
-2. Portal → Postgres → **Backup and restore → Backup now** (and note the time).
-3. Notify users, then on the VM:
-```bash
-sudo systemctl stop aspen
-sudo -u aspensvc ln -sfn /opt/aspen/releases/<new-REL> /opt/aspen/current
-sudo systemctl start aspen && sudo journalctl -u aspen -f
-```
-4. Smoke test: log in, open an order, print an invoice. Check the log shows the **same** `Bitronix transaction manager server ID` as before.
+## Deploying a new release
 
-Rollback: point `current` back at the previous release and restart. Moqui only adds tables/columns, so older code runs on the newer schema. A bad data change → restore the database to the time noted in step 2.
+See [UPDATE.md](UPDATE.md): preflight, reviewing what the release changes (indexes, seed data, upgrade services, new jobs), test, build, stage, switch, one-time steps, verify, rollback.
 
 ## Operations quick reference
 | Task | Command (on the VM) |
