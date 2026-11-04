@@ -74,7 +74,7 @@ Phase numbers refer to `../INSTALL.md`.
 2. [x] `MoquiProductionConfPostgres.xml` + `prodPostgres.sh` (secrets via env vars), aligned with the prod credentials card ([Trello](https://trello.com/c/BfaA2YNv)): allowlisted secret-free confs ship inside each release
 3. [x] XA on Azure Postgres: `max_prepared_transactions=100` accepted + restart (2026-10-19)
 4. [x] Provision Azure: VM, DB subnet, Postgres 18 B2s with geo-redundant backup + private access (phases 1–4, 2026-10-19)
-5. [x] First release built and deployed: `2026-10-19_06cbcf0d` with `RELEASE.txt` (phase 8). Release **tags** across repos still to do before the next release
+5. [x] Releases: `2026-10-19_06cbcf0d` (first, phase 8), `2026-10-29_4dea19a9`, **current `2026-11-03_92f4399a`** (Account Pool Overhaul, via UPDATE.md). All three kept on the VM for rollback. Release **tags** across repos still to do
 6. [x] Bitronix server ID `aspen-vm-aspen-valhalla-3873d455`, unchanged across 5 starts; `shared/txlog` is the VM's own
 7. [x] First start + data load (105 s), TLS `verify-full` to Postgres, admin account, HTTPS live at https://valhalla.spokanesoftware.com (phases 5–15, 2026-10-19/20)
 8. [x] Budget alert (phase 16)

@@ -321,7 +321,7 @@ sudo grep -c "permission denied" $L                         # 0
 sudo ss -tnp | grep java | grep -c ":5432"                   # >0 connections to <pg-host>'s private IP
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/status     # 200
 ```
-> Expected noise: 2 ERRORs about `component://aspen/screen/aspen/Production/Run/RunProducts/ConsumeAsset.xml` come from the deprecated *New Available For Sale* screen; ignore them.
+> Expected startup noise (no ERROR lines since release `2026-11-03_92f4399a`): WARN "Error warming entity cache: NullPointerException", WARN about the missing `qz-private-key.pem` signing key, WARN "Found unknown tables/columns" for tables and columns a release retired (Moqui never drops them), and the misleading "Data loaded into empty DB" WARN. Once the site is public, expect a steady stream of "Web Resource Not Found" WARNs (`.env`, `.git/config`, `wp-config.php`, `phpunit`, ...) and occasional "400: Unable to parse URI query" ERRORs from internet scanners; Aspen refuses them, nothing to do. Older releases also logged 2 ERRORs about `ConsumeAsset.xml` from the deprecated *New Available For Sale* screen.
 > To prove the data lives in Azure Postgres and not on the VM: no `postgresql-1x` server package (`dpkg -l | grep "^ii  postgresql-1"` shows only the client), no `*.mv.db` files under `/opt/aspen`, and the `ss` line above.
 
 ## 11. Create the admin account (SSH tunnel, before opening the site) ✅
@@ -576,7 +576,7 @@ See [UPDATE.md](UPDATE.md): preflight, reviewing what the release changes (index
 |---|---|
 | Status / restart | `systemctl status aspen` · `sudo systemctl restart aspen` |
 | Logs | `sudo tail -f /opt/aspen/shared/log/moqui.log` · `sudo journalctl -u aspen -f` |
-| What's deployed | `readlink /opt/aspen/current` · `sudo cat /opt/aspen/current/RELEASE.txt` |
+| What's deployed | `sudo readlink /opt/aspen/current` · `sudo cat /opt/aspen/current/RELEASE.txt` |
 | Admin psql | `psql "host=<pg-host> dbname=aspen user=aspenadmin sslmode=verify-full sslrootcert=/etc/ssl/certs/azure-postgres-root-ca.pem"` |
 | Certificate | `sudo certbot certificates` · `sudo certbot renew --dry-run` |
 | Firewall | `sudo ufw status` (and the VM's NSG in the portal) |

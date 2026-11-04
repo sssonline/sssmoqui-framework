@@ -2,13 +2,28 @@
 
 How to ship new Aspen code to a client VM that [INSTALL.md](INSTALL.md) set up. A human or an agent can follow it top to bottom. Record every step and its output in the client's install log (`clients/<client>-install-log.md`).
 
-Shape of a release: build one WAR on the Mac, unpack it beside the running release on the VM, switch the `current` symlink during a short outage, then run the release's one-time upgrade steps. The previous release stays on disk, so rolling back is one symlink and a restart.
+## At a glance
+
+1. **Pull and check** (Mac): get every repo up to date on `update` with no local changes, and read what's running on the client from its `RELEASE.txt`.
+2. **Review the changes**: since the client's release, look for new indexes, changed seed data, one-time `upgrade#` services and new scheduled jobs. Write down what will need doing after the switch.
+3. **Test** (Mac): run the Postgres test suite. It should pass; if you ship anyway, write down why.
+4. **Build** (Mac): build one WAR file, check its contents, and write a `RELEASE.txt` manifest naming every repo's commit.
+5. **Send and stage** (Mac → VM): copy the WAR to the VM and unpack it into a new release folder beside the running one. Users notice nothing.
+6. **Switch** (VM, about 3–5 minutes down): note the time, stop Aspen, point `current` at the new release, start Aspen, wait for the site, check the startup log.
+7. **One-time steps** (Aspen): run the release's upgrade services under Tools → Service Run, and pause any new jobs the client doesn't use.
+8. **Check**: log in, try the main screens and whatever changed, and confirm the release name.
+9. **Record**: write it all in the client's install log, and remove old releases so at most three remain.
+10. **If it goes wrong**: point `current` back at the previous release and restart (see Rollback).
+
+How it works: the previous release stays on disk next to the new one, and `current` is a symlink to whichever one runs, so switching and rolling back each take one command and a restart. The database is shared, and Aspen only adds to it on an update.
 
 | Placeholder | Meaning (Valhalla) |
 |---|---|
 | `<client>` | SSH alias for the VM (`valhalla`) |
 | `<site>` | public URL (`https://valhalla.spokanesoftware.com`) |
 | `<OLD>` / `<NEW>` | release names, `<date>_<moqui-root-short-sha>` (`2026-10-29_4dea19a9`) |
+
+Run the Mac commands from the moqui root. VM commands assume you're logged in over SSH with the `<client>` alias from INSTALL.md (`ssh <client>`), and the Aspen steps assume the SSS admin login.
 
 Expect about an hour of work and **3–5 minutes of downtime** (stop, start, ~80 s Moqui startup).
 
@@ -62,7 +77,14 @@ Start Docker Desktop (`open -a Docker`), stop any local Moqui, then:
 ```bash
 gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml     # local Postgres 18, must pass
 ```
-Valhalla's 2026-10 baseline was 290 tests, 0 failures, 0 errors. Don't ship a red suite.
+Valhalla's 2026-10 baseline was 290 tests, 0 failures, 0 errors. Don't ship a red suite without a decision: if someone decides to ship anyway, record the real totals, which failures they judged test-only, and who decided. Gradle stops at the first component with failures, so later components didn't run; say so too.
+
+Read totals from the results (the console line covers only the component that failed):
+```bash
+find runtime/component -path '*/build/test-results/test/*.xml' -newer build.gradle -exec grep -ho 'tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' {} + \
+  | awk -F'"' '{t+=$2;s+=$4;f+=$6;e+=$8} END {print t" tests, "f" failures, "e" errors, "s" skipped"}'
+```
+Each run overwrites the previous results, so copy the numbers into the install log right away.
 
 ## 4. Build and check the WAR (Mac)
 
@@ -122,11 +144,19 @@ sudo cat /opt/aspen/shared/txlog/server-id
    ```
    - The server ID must equal the one recorded in step 5.
    - "Loaded [n] records (with types from on-start-load-types…)" is the create-only load adding the release's new seed and install records.
-   - Compare the ERROR lines with the known-noise list in INSTALL.md phase 10. Anything new needs explaining before you continue.
+   - Compare the ERROR and WARN lines with the expected-noise list in INSTALL.md phase 10. Anything new needs explaining before you continue. The log writes a `--- <time> [thread] LEVEL class` header line, then the message on the next line, so read the line after each match. To see only this boot, start from the shutdown line:
+     ```bash
+     sudo bash -c 'L=/opt/aspen/shared/log/moqui.log; s=$(grep -n "yShutdownThread" $L | tail -1 | cut -d: -f1); tail -n +$s $L | grep -A1 "\] \(ERROR\|WARN\) " | grep -v "^--"'
+     sudo grep -oE "Created table [^ ]+" /opt/aspen/shared/log/moqui.log | tail -20     # tables this release added
+     ```
 
 ## 7. One-time steps for this release (Aspen, as the SSS admin)
 
-1. **Upgrade services** from step 2: **Tools → Service Run** (`/vapps/tools/Service/ServiceRun`). Enter each full service name, click **Run**, and copy its result into the install log (for example "created [ ... ]" or "nothing to do").
+1. **Upgrade services** from step 2. First check what's actually missing: Moqui sometimes creates an index on start anyway (on Valhalla's 2026-11-03 release all ten new indexes already existed). Read-only, on the VM with the psql pattern from INSTALL.md:
+   ```sql
+   select indexname, tablename from pg_indexes where schemaname='public' and upper(indexname) in ('<INDEX_1>','<INDEX_2>');
+   ```
+   Skip a service whose work is already done, and record what you skipped and why. Then run the rest from **Tools → Service Run** (`/vapps/tools/Service/ServiceRun`). Enter each full service name, click **Run**, and copy its result into the install log (for example "created [ ... ]" or "nothing to do").
 2. **Changed seed records**, only if step 2 found any. From the release directory on the VM, with Aspen stopped:
    ```bash
    sudo systemctl stop aspen
@@ -140,7 +170,7 @@ sudo cat /opt/aspen/shared/txlog/server-id
 ## 8. Verify
 
 - `<site>` loads, and you can log in.
-- `readlink /opt/aspen/current` and `sudo cat /opt/aspen/current/RELEASE.txt` show `<NEW>`.
+- `sudo readlink /opt/aspen/current` and `sudo cat /opt/aspen/current/RELEASE.txt` show `<NEW>` (`/opt/aspen` is root-only, so without `sudo` readlink prints nothing).
 - Smoke test: open a recent order, a shipment with an attachment (download it), and an invoice (print or preview), plus whatever the release changed.
 - An hour later, check `moqui.log` for new ERROR lines and the Service Job runs for errors.
 
