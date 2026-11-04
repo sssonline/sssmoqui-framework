@@ -1,0 +1,337 @@
+<title>Aspen on Azure</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one wide system map (scrolls sideways on phones), then short reference sections in a single reading column. */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --fg: #18202b; --muted: #5a6575; --line: #c9d0da;
+  --accent: #1f5fbf;
+  --net: #e8f0fb; --net-line: #8fb0e0;
+  --store: #e6f4f1; --store-line: #7fbfb0;
+  --mail: #fbf1e3; --mail-line: #d9b27a;
+  --mon: #f6ebf0; --mon-line: #c99ab0;
+  --ext: #eef0f3; --ext-line: #aab3c0;
+  --warn: #9a5b00;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161d; --panel: #18202a; --fg: #e3e8ef; --muted: #9aa6b6; --line: #313c4a;
+  --accent: #7fb0ff;
+  --net: #16243a; --net-line: #3d5f91;
+  --store: #132a27; --store-line: #3a7b6d;
+  --mail: #2c2416; --mail-line: #8a6a3a;
+  --mon: #2a1c24; --mon-line: #855a6e;
+  --ext: #1d242e; --ext-line: #4a5666;
+  --warn: #f0b45a;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11161d; --panel: #18202a; --fg: #e3e8ef; --muted: #9aa6b6; --line: #313c4a;
+  --accent: #7fb0ff;
+  --net: #16243a; --net-line: #3d5f91;
+  --store: #132a27; --store-line: #3a7b6d;
+  --mail: #2c2416; --mail-line: #8a6a3a;
+  --mon: #2a1c24; --mon-line: #855a6e;
+  --ext: #1d242e; --ext-line: #4a5666;
+  --warn: #f0b45a;
+  color-scheme: dark; }
+
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 40px; }
+header { display: grid; gap: 8px; max-width: 70ch; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 600 clamp(28px, 4vw, 40px)/1.1 var(--display); margin: 0; text-wrap: balance; }
+h2 { font: 600 22px/1.2 var(--display); margin: 0 0 12px; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: .9em; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.map { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.map svg { display: block; min-width: 1080px; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid; }
+
+/* SVG styling from tokens */
+.z-azure { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.z-net { fill: var(--net); stroke: var(--net-line); }
+.z-store { fill: var(--store); stroke: var(--store-line); }
+.z-mail { fill: var(--mail); stroke: var(--mail-line); }
+.z-mon { fill: var(--mon); stroke: var(--mon-line); }
+.z-ext { fill: var(--ext); stroke: var(--ext-line); }
+.box { fill: var(--panel); stroke: var(--line); }
+.t-zone { font: 600 13px var(--display); fill: var(--fg); letter-spacing: .02em; }
+.t-h { font: 600 14px var(--body); fill: var(--fg); }
+.t-s { font: 400 12px var(--body); fill: var(--muted); }
+.t-m { font: 400 11.5px var(--mono); fill: var(--muted); }
+.t-w { font: 500 11.5px var(--body); fill: var(--warn); }
+.t-edge { font: 500 11px var(--mono); fill: var(--accent); }
+.edge { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.edge.dash { stroke-dasharray: 4 3; }
+.halo { fill: none; stroke: var(--panel); stroke-width: 7; }
+.edge-bg { fill: var(--panel); }
+.arrowhead { fill: var(--accent); }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+.cols > section { min-width: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font: 600 12px var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+td:first-child { white-space: nowrap; font-weight: 500; }
+.tbl { overflow-x: auto; }
+ol, ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--mail); border-radius: 0 6px 6px 0; font-size: 14px; }
+.docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.doc { display: grid; gap: 4px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.doc a { font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.doc a:hover { text-decoration: underline; }
+.doc p { font-size: 14px; color: var(--muted); }
+footer { font-size: 13px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Spokane Software Systems · Aspen production on Azure</div>
+  <h1>How a client's Aspen system runs on Azure</h1>
+  <p class="lede">One Ubuntu VM runs Aspen behind nginx. Data lives in a private Azure Postgres server; attachments and long-term backups live in a storage account; email goes out through Azure Communication Services; Azure Monitor watches all of it and emails SSS. Names below are Valhalla's, the first client (<span class="mono">valhalla.spokanesoftware.com</span>, resource group <span class="mono">rg-aspen-valhalla-prod</span>, West US 3).</p>
+</header>
+
+<div class="map" role="img" aria-label="Diagram of the Valhalla Aspen system on Azure: users reach nginx on the VM over HTTPS; Aspen talks to private Postgres, an Azure Files share for attachments, and Communication Services for email; timers back up the database monthly to a blob container; Azure Monitor checks uptime and metrics and emails SSS.">
+<svg viewBox="0 0 1400 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="arrowhead" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- external, left -->
+  <rect class="z-ext" x="20" y="90" width="180" height="64" rx="8"/>
+  <text class="t-h" x="34" y="116">Valhalla users</text>
+  <text class="t-s" x="34" y="136">web browser, anywhere</text>
+
+  <rect class="z-ext" x="20" y="190" width="180" height="64" rx="8"/>
+  <text class="t-h" x="34" y="216">Cloudflare DNS</text>
+  <text class="t-m" x="34" y="236">A record → VM public IP</text>
+
+  <rect class="z-ext" x="20" y="288" width="180" height="76" rx="8"/>
+  <text class="t-h" x="34" y="314">SSS team</text>
+  <text class="t-s" x="34" y="334">admin from the office IP;</text>
+  <text class="t-s" x="34" y="352">builds releases on a Mac</text>
+
+  <!-- external, right -->
+  <rect class="z-ext" x="1210" y="368" width="170" height="64" rx="8"/>
+  <text class="t-h" x="1224" y="394">Email recipients</text>
+  <text class="t-s" x="1224" y="414">invoices, password resets</text>
+
+  <rect class="z-ext" x="1210" y="604" width="170" height="64" rx="8"/>
+  <text class="t-h" x="1224" y="630">SSS inbox</text>
+  <text class="t-s" x="1224" y="650">alerts, budget, job errors</text>
+
+  <!-- Azure boundary -->
+  <rect class="z-azure" x="230" y="20" width="960" height="770" rx="12"/>
+  <text class="t-zone" x="250" y="44">AZURE · subscription Spokane_Main · resource group rg-aspen-valhalla-prod · West US 3</text>
+
+  <!-- VNet -->
+  <rect class="z-net" x="250" y="60" width="460" height="470" rx="10"/>
+  <text class="t-zone" x="266" y="82">Virtual network vnet-westus3-1</text>
+
+  <!-- VM subnet -->
+  <rect class="box" x="270" y="96" width="420" height="250" rx="8"/>
+  <text class="t-h" x="286" y="118">VM · vm-aspen-valhalla</text>
+  <text class="t-s" x="286" y="136">D2as_v6 · Ubuntu 24.04 · ports 80/443 open, 22 from the office only</text>
+
+  <rect class="z-net" x="290" y="150" width="180" height="70" rx="6"/>
+  <text class="t-h" x="304" y="176">nginx</text>
+  <text class="t-s" x="304" y="196">HTTPS, Let's Encrypt</text>
+  <text class="t-s" x="304" y="212">certificate auto-renews</text>
+
+  <rect class="z-net" x="490" y="150" width="180" height="70" rx="6"/>
+  <text class="t-h" x="504" y="176">Aspen (Moqui, Java)</text>
+  <text class="t-m" x="504" y="196">aspen.service</text>
+  <text class="t-m" x="504" y="212">/opt/aspen/current</text>
+
+  <rect class="z-net" x="290" y="236" width="270" height="96" rx="6"/>
+  <text class="t-h" x="304" y="258">Scheduled timers</text>
+  <text class="t-m" x="304" y="278">db backup · 1st of month</text>
+  <text class="t-m" x="304" y="296">backup age check · daily</text>
+  <text class="t-m" x="304" y="314">uses the VM's managed identity</text>
+
+  <!-- DB subnet -->
+  <rect class="box" x="270" y="366" width="420" height="150" rx="8"/>
+  <text class="t-m" x="286" y="388">subnet snet-db · private only</text>
+  <rect class="z-net" x="290" y="400" width="380" height="100" rx="6"/>
+  <text class="t-h" x="304" y="424">Azure Database for PostgreSQL</text>
+  <text class="t-m" x="304" y="444">psql-aspen-valhalla · PG 18 · Burstable B2s</text>
+  <text class="t-s" x="304" y="464">automatic backups: restore to any point</text>
+  <text class="t-s" x="304" y="482">in the last 35 days, copied to a second region</text>
+
+  <!-- Storage -->
+  <rect class="z-store" x="750" y="60" width="410" height="260" rx="10"/>
+  <text class="t-zone" x="766" y="82">Storage account stvalhallaaspen · geo-redundant</text>
+  <rect class="box" x="770" y="96" width="370" height="96" rx="6"/>
+  <text class="t-h" x="784" y="120">File share aspen-content</text>
+  <text class="t-s" x="784" y="140">every uploaded attachment</text>
+  <text class="t-m" x="784" y="160">mounted on the VM at /mnt/aspen-content</text>
+  <text class="t-s" x="784" y="180">deleted files recoverable for 30 days</text>
+  <rect class="box" x="770" y="206" width="370" height="100" rx="6"/>
+  <text class="t-h" x="784" y="230">Blob container db-backups</text>
+  <text class="t-s" x="784" y="250">a full database export every month (Cool tier)</text>
+  <text class="t-s" x="784" y="270">kept 7 years; can't be deleted or overwritten</text>
+  <text class="t-s" x="784" y="290">(policy unlocked, so SSS can still remove it)</text>
+
+  <!-- Email -->
+  <rect class="z-mail" x="750" y="340" width="410" height="124" rx="10"/>
+  <text class="t-zone" x="766" y="362">Communication Services email · acs-aspen-valhalla</text>
+  <text class="t-s" x="766" y="384">sends as DoNotReply@valhallasales.com ("Valhalla Sales")</text>
+  <text class="t-s" x="766" y="402">SPF, DKIM and DMARC pass for valhallasales.com</text>
+  <text class="t-s" x="766" y="420">login is an Entra app secret: renew before Nov 2028</text>
+  <text class="t-w" x="766" y="446">Microsoft retires this service 2028-09-30: move before then</text>
+
+  <!-- Budget -->
+  <rect class="z-mon" x="750" y="482" width="410" height="48" rx="10"/>
+  <text class="t-h" x="766" y="504">Budget valhalla-monthly · $175</text>
+  <text class="t-s" x="766" y="521">emails at 80% and 100% of actual, 100% of forecast (~$130 expected)</text>
+
+  <!-- Monitoring -->
+  <rect class="z-mon" x="250" y="560" width="910" height="214" rx="10"/>
+  <text class="t-zone" x="266" y="582">Azure Monitor</text>
+
+  <rect class="box" x="270" y="596" width="260" height="80" rx="6"/>
+  <text class="t-h" x="284" y="620">Uptime test</text>
+  <text class="t-s" x="284" y="640">loads /status every 5 minutes</text>
+  <text class="t-s" x="284" y="658">from West US and Central US</text>
+
+  <rect class="box" x="270" y="690" width="260" height="70" rx="6"/>
+  <text class="t-h" x="284" y="714">Log Analytics workspace</text>
+  <text class="t-s" x="284" y="734">stores test results</text>
+  <text class="t-s" x="284" y="750">0.5 GB/day cap keeps cost flat</text>
+
+  <rect class="box" x="550" y="596" width="370" height="164" rx="6"/>
+  <text class="t-h" x="564" y="620">Alert rules</text>
+  <text class="t-s" x="564" y="642">Site down: uptime test fails from both locations</text>
+  <text class="t-s" x="564" y="664">VM: CPU over 85%, low memory, VM unavailable</text>
+  <text class="t-s" x="564" y="686">Postgres: CPU over 80%, storage over 80%,</text>
+  <text class="t-s" x="564" y="702">   CPU credits under 200, more than 10 failed logins</text>
+  <text class="t-s" x="564" y="724">Backup overdue: newest export older than</text>
+  <text class="t-s" x="564" y="740">   800 hours (33 days)</text>
+
+  <rect class="box" x="940" y="596" width="200" height="80" rx="6"/>
+  <text class="t-h" x="954" y="620">Action group</text>
+  <text class="t-m" x="954" y="640">ag-aspen-valhalla</text>
+  <text class="t-s" x="954" y="660">sends the email</text>
+
+  <!-- ===== edges ===== -->
+  <!-- users → DNS lookup -->
+  <path class="edge dash" d="M110 154 V186" marker-end="url(#ah)"/>
+  <text class="t-edge" x="118" y="175">lookup</text>
+
+  <!-- users → nginx -->
+  <path class="edge" d="M200 116 H240 V172 H286" marker-end="url(#ah)"/>
+  <text class="t-edge" x="204" y="108">HTTPS 443</text>
+
+  <!-- SSS → VM -->
+  <path class="edge" d="M200 326 H266" marker-end="url(#ah)"/>
+  <text class="t-edge" x="204" y="318">SSH 22</text>
+
+  <!-- nginx → aspen -->
+  <path class="edge" d="M470 185 H486" marker-end="url(#ah)"/>
+
+  <!-- aspen → postgres (with halo where backup line crosses) -->
+  <path class="edge" d="M620 220 V396" marker-end="url(#ah)"/>
+  <rect class="edge-bg" x="626" y="352" width="64" height="16"/>
+  <text class="t-edge" x="628" y="364">TLS 5432</text>
+
+  <!-- timers pg_dump reads postgres -->
+  <path class="edge dash" d="M425 332 V396" marker-end="url(#ah)"/>
+  <text class="t-edge" x="432" y="360">pg_dump</text>
+
+  <!-- timers → db-backups -->
+  <path class="halo" d="M560 268 H740"/>
+  <path class="edge" d="M560 268 H740 V256 H766" marker-end="url(#ah)"/>
+  <text class="t-edge" x="636" y="262">upload</text>
+
+  <!-- aspen → file share -->
+  <path class="edge" d="M670 166 H724 V144 H766" marker-end="url(#ah)"/>
+  <text class="t-edge" x="676" y="160">SMB 445</text>
+
+  <!-- aspen → ACS -->
+  <path class="halo" d="M670 204 H732 V400"/>
+  <path class="edge" d="M670 204 H732 V400 H746" marker-end="url(#ah)"/>
+  <text class="t-edge" x="676" y="198">SMTP 587</text>
+
+  <!-- ACS → recipients -->
+  <path class="edge" d="M1160 400 H1206" marker-end="url(#ah)"/>
+
+  <!-- uptime test → nginx -->
+  <path class="edge dash" d="M300 596 V546 H260 V206 H286" marker-end="url(#ah)"/>
+  <text class="t-edge" x="306" y="552">GET /status</text>
+
+  <!-- metrics → alert rules -->
+  <path class="edge dash" d="M680 530 V592" marker-end="url(#ah)"/>
+  <text class="t-edge" x="688" y="560">VM, Postgres and backup-age metrics</text>
+
+  <!-- uptime → alerts → action group → inbox -->
+  <path class="edge" d="M530 636 H546" marker-end="url(#ah)"/>
+  <path class="edge" d="M920 636 H936" marker-end="url(#ah)"/>
+  <path class="edge" d="M1140 636 H1206" marker-end="url(#ah)"/>
+  <!-- budget → inbox -->
+  <path class="edge dash" d="M1160 506 H1180 V620 H1206" marker-end="url(#ah)"/>
+</svg>
+<div class="legend">
+  <span><i class="sw" style="background:var(--net);border-color:var(--net-line)"></i>network and compute</span>
+  <span><i class="sw" style="background:var(--store);border-color:var(--store-line)"></i>files and backups</span>
+  <span><i class="sw" style="background:var(--mail);border-color:var(--mail-line)"></i>email</span>
+  <span><i class="sw" style="background:var(--mon);border-color:var(--mon-line)"></i>monitoring and cost</span>
+  <span>solid arrow: live traffic · dashed: scheduled or monitoring</span>
+</div>
+</div>
+
+<div class="cols">
+<section>
+  <h2>Backups and recovery</h2>
+  <div class="tbl"><table>
+    <tr><th>Layer</th><th>What it covers</th></tr>
+    <tr><td>Postgres automatic</td><td>Restore the whole database to any minute in the last 35 days. Copies are kept in a second region.</td></tr>
+    <tr><td>Monthly export</td><td>On the 1st at 10:00 UTC the VM runs <code>pg_dump</code> and uploads it to <code>db-backups</code>. Kept 7 years, protected from deletion.</td></tr>
+    <tr><td>Backup check</td><td>Daily at 12:00 UTC the VM reports the newest export's age to Azure. Older than 33 days raises the backup-overdue alert.</td></tr>
+    <tr><td>Attachments</td><td>Geo-redundant storage, plus 30-day soft delete on the share.</td></tr>
+    <tr><td>VM itself</td><td>Not backed up on purpose. It holds no data and is rebuilt from the install runbook and a release.</td></tr>
+    <tr><td>Bad release</td><td>The last 3 releases stay on the VM. Rollback is pointing <code>current</code> back and restarting.</td></tr>
+  </table></div>
+  <p class="note" style="margin-top:14px">Known gap: Azure refused to restore into a new Burstable server in West US 3. In an emergency, restore on General Purpose with the CLI command in the install runbook (phase 21) and scale down later.</p>
+</section>
+
+<section>
+  <h2>How an update reaches the VM</h2>
+  <ol>
+    <li>Check every repo is clean and pushed, then review what changed: new indexes, seed data, upgrade services, scheduled jobs.</li>
+    <li>Run the test suites (H2 and Postgres) and record the results.</li>
+    <li>Build the release on a Mac. It gets a dated folder name and a <code>RELEASE.txt</code> listing every repo's commit.</li>
+    <li>Copy it to <code>/opt/aspen/releases/</code> on the VM while the old one keeps running.</li>
+    <li>Off hours: point <code>current</code> at the new release and restart. About 90 seconds down.</li>
+    <li>Do any one-time steps, verify the site and logs, write it in the client's install log.</li>
+  </ol>
+  <p style="margin-top:12px">Every command is in <a href="https://github.com/sssonline/sssmoqui-framework/blob/update/docs/azure/UPDATE.md">UPDATE.md</a>.</p>
+</section>
+</div>
+
+<section>
+  <h2>The docs</h2>
+  <p class="lede" style="margin-bottom:14px">All in the <span class="mono">sssmoqui-framework</span> repo under <span class="mono">docs/azure/</span> (branch <span class="mono">update</span>).</p>
+  <div class="docs">
+    <div class="doc"><a href="https://github.com/sssonline/sssmoqui-framework/blob/update/docs/azure/UPDATE.md">UPDATE.md</a><p>Update runbook: deploy new Aspen code to a client, with a 10-step summary at the top and rollback.</p></div>
+    <div class="doc"><a href="https://github.com/sssonline/sssmoqui-framework/blob/update/docs/azure/INSTALL.md">INSTALL.md</a><p>Install runbook: build a new client system from nothing, phase by phase.</p></div>
+    <div class="doc"><a href="https://github.com/sssonline/sssmoqui-framework/blob/update/docs/azure/AZURE_DEPLOY_GUIDE.md">AZURE_DEPLOY_GUIDE.md</a><p>Why each choice was made: sizing, cost, security, recovery.</p></div>
+    <div class="doc"><a href="https://github.com/sssonline/sssmoqui-framework/blob/update/docs/azure/clients/valhalla-deployment.md">clients/valhalla-deployment.md</a><p>Valhalla's decisions, resource list, open items and open tests.</p></div>
+    <div class="doc"><a href="https://github.com/sssonline/sssmoqui-framework/blob/update/docs/azure/clients/valhalla-install-log.md">clients/valhalla-install-log.md</a><p>Every command run on Valhalla and what it returned.</p></div>
+  </div>
+</section>
+
+<footer>Current as of 2026-11-04, Valhalla release 2026-11-03_92f4399a. Passwords and keys are never in these docs; they are in the SSS password manager.</footer>
+</div>

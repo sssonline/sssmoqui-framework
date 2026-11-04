@@ -2,6 +2,7 @@
 
 Step-by-step install of a new Aspen production server on Azure: one Ubuntu VM running Aspen behind nginx, plus Azure Database for PostgreSQL. A person or an agent should be able to follow it top to bottom.
 
+- **System map** (diagram of every Azure piece, backups and alerts): [`architecture.html`](architecture.html), also published as a shareable page.
 - **Why** each choice was made: [`AZURE_DEPLOY_GUIDE.md`](AZURE_DEPLOY_GUIDE.md).
 - **Client decisions and resource list**: `clients/<client>-deployment.md` (first client: [`clients/valhalla-deployment.md`](clients/valhalla-deployment.md)).
 - **What actually happened** on the first install, command by command: [`clients/valhalla-install-log.md`](clients/valhalla-install-log.md).

@@ -10,7 +10,7 @@ How to ship new Aspen code to a client VM that [INSTALL.md](INSTALL.md) set up. 
 4. **Build** (Mac): build one WAR file, check its contents, and write a `RELEASE.txt` manifest naming every repo's commit.
 5. **Send and stage** (Mac → VM): copy the WAR to the VM and unpack it into a new release folder beside the running one. Users notice nothing.
 6. **Switch** (VM, about 3–5 minutes down): note the time, stop Aspen, point `current` at the new release, start Aspen, wait for the site, check the startup log.
-7. **One-time steps** (Aspen): run the release's upgrade services under Tools → Service Run, and pause any new jobs the client doesn't use.
+7. **One-time steps** (Aspen): run the release's upgrade services under Tools → Service Run (skip any whose work is already done), remove seed records the release retired so the database matches a clean install, and pause any new jobs the client doesn't use.
 8. **Check**: log in, try the main screens and whatever changed, and confirm the release name.
 9. **Record**: write it all in the client's install log, and remove old releases so at most three remain.
 10. **If it goes wrong**: point `current` back at the previous release and restart (see Rollback).
@@ -63,6 +63,15 @@ Look for these four things. They are what makes an update different from a fresh
    - A changed key, such as a renamed screen path: the new record gets added and the old one stays. That's normally harmless.
    - The same key with changed values on **seed** data: reload just that file after the switch (step 7). Seed data belongs to Aspen, so overwriting it is fine.
    - Changed **install** or **seed-initial** records: the client may have edited them (GL accounts, settings). Never bulk-reload these. Fix only the rows the release needs, after checking them.
+   - **Removed** records, and old keys left behind by a renamed one, stay in the database. A clean install wouldn't have them, so a retired status or enum can still appear in drop-downs. Delete them after the switch, once nothing references them (step 7).
+
+   [seedDiff.sh](seedDiff.sh) lists every changed seed, seed-initial and install file, with counts of removed and added lines. Feed it the manifest of the release the database was **first loaded from**, so changes from every release since are included:
+   ```bash
+   ssh <client> "sudo cat /opt/aspen/releases/<first-release>/RELEASE.txt" | tail -n +4 > /tmp/manifest.txt
+   docs/azure/seedDiff.sh /tmp/manifest.txt
+   git -C runtime/component/<name> diff -U0 <sha> HEAD -- data entity | grep -E '^-[[:space:]]*<'   # removed or changed records
+   ```
+   Seed defined inside entity files (`<seed-data>`) counts too, which is why the last command includes `entity`. Files showing only `+` lines just add records, and the load on start handles those.
 4. **New scheduled jobs.** A new `moqui.service.job.ServiceJob` in seed data starts running at the next start unless it has `paused="Y"`:
    ```bash
    git diff <deployed>..HEAD -- data | grep -E '^\+.*ServiceJob '
@@ -164,8 +173,9 @@ sudo cat /opt/aspen/shared/txlog/server-id
    sudo systemctl start aspen
    ```
    A command-line load creates *or updates*, unlike the create-only load on start. Load only the seed files you reviewed.
-3. **New scheduled jobs:** pause the ones the client doesn't use, as decided in step 2.
-4. If you changed data with SQL, clear the affected caches (**System → Cache**) or restart.
+3. **Removed or renamed seed records**, only if step 2 found any. Check that nothing references them, then delete them in one transaction with the psql pattern from INSTALL.md. Valhalla's 2026-11-03 release is a worked example (install log, Session 7): a relabeled status (`update status_item set description=...`), a retired enum type and its values, a retired GL account type enum, two help documents at old screen paths, and an index swap (`drop index acct_pool_pseudo`) that the release's upgrade service would otherwise have done. Read the values back afterward.
+4. **New scheduled jobs:** pause the ones the client doesn't use, as decided in step 2.
+5. If you changed data with SQL, clear the affected caches (**System → Cache**) or restart Aspen (about 90 seconds down). The load on start is create-only, so it never brings back records the release removed.
 
 ## 8. Verify
 

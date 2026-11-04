@@ -78,7 +78,7 @@ Phase numbers refer to `../INSTALL.md`.
 6. [x] Bitronix server ID `aspen-vm-aspen-valhalla-3873d455`, unchanged across 5 starts; `shared/txlog` is the VM's own
 7. [x] First start + data load (105 s), TLS `verify-full` to Postgres, admin account, HTTPS live at https://valhalla.spokanesoftware.com (phases 5–15, 2026-10-19/20)
 8. [x] Budget alert (phase 16)
-9. [ ] Azure Files attachments, verified with an upload/download, **before any user uploads** (phase 17)
+9. [x] Azure Files attachments, verified with an upload/download (phase 17, 2026-10-29)
 10. [x] ACS Email on `valhallasales.com`, sender `DoNotReply@valhallasales.com` as "Valhalla Sales", SPF/DKIM/DMARC passing (phase 18). **Still to do once users are on:** test a password reset and an invoice email
 11. [x] Pause unused ServiceJobs; job errors email support@sssonline.com, untested (phase 19)
 12. [x] Monitoring + alerts (phase 20, 2026-10-29). [ ] Sentry prod environment
