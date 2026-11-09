@@ -56,9 +56,9 @@ Look for these four things. They are what makes an update different from a fresh
 1. **Entity changes.** On start Moqui adds new tables and new columns, but **never adds an index to an existing table**, never changes a column's type, and never drops anything. Releases that need an index or a data fix ship an idempotent `upgrade#...` service (next item).
 2. **One-time upgrade services**, which someone must run by hand after the switch:
    ```bash
-   git diff <deployed>..HEAD -- service | grep -E '^\+.*verb="upgrade"'
+   git diff <deployed>..HEAD -- service | grep -E '^\+.*verb="(upgrade|migrate)"'
    ```
-   Read each one's description, and note the full name (`<package>.<File>.upgrade#<Noun>`). They're written to be idempotent, so running one twice is harmless.
+   Read each one's description, and note the full name (`<package>.<File>.upgrade#<Noun>` or `migrate#<Noun>`). They're written to be idempotent, so running one twice is harmless. Some need input or a dry run first: `migrate#TagOriginalQuantityLineage` (card #1058) needs the date #1058 was deployed to that database and runs as a dry run by default; its description gives the steps.
 3. **Seed and install data.** On every start Moqui loads `seed,seed-initial,install` **create-only**: new records are added, but a changed record keeps its old values and a removed record stays in the database. For each changed data file, look at the removed (`-`) lines:
    - A changed key, such as a renamed screen path: the new record gets added and the old one stays. That's normally harmless.
    - The same key with changed values on **seed** data: reload just that file after the switch (step 7). Seed data belongs to Aspen, so overwriting it is fine.

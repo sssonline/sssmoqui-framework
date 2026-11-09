@@ -45,10 +45,39 @@ def moquiRuntime = 'runtime'
 def moquiConfDev = 'conf/MoquiDevConf.xml'
 def moquiConfProduction = 'conf/MoquiProductionConf.xml'
 
+// ========== #1334 test databases (rules: runtime/component/aspen/src/test/TESTING.md) ==========
+// A conf whose name contains MoquiTestConf points at a test database (H2 runtime/db/h2/moquitest, Postgres 'moquitest'),
+// never the dev one. cleanPullCompTest wipes and reloads its database, so without -Pconf it uses the H2 test conf.
+def moquiConfTest = 'conf/MoquiTestConf.xml'
+def isTestConf = { Object c -> c != null && c.toString().contains('MoquiTestConf') }
+// a system property or environment variable named like a conf default-property beats the conf (entity_ds_database,
+// entity_ds_url, entity_ds_host, ...), so one exported in the shell could point a test conf at the dev or another
+// database: refuse to reset, load or test a test database while any is set
+def assertTestConfTargetsOnly = { String what ->
+    List<String> names = (System.getenv().keySet() + System.properties.stringPropertyNames()).findAll { String n -> n.startsWith('entity_ds_') }.unique().sort()
+    if (names) throw new GradleException("${what} on a test conf refused: ${names.join(', ')} set in the environment or system " +
+            "properties would override the test database in the conf. Unset them (./aspenTest.sh does) and run again.")
+}
+if (!project.hasProperty('conf') && gradle.startParameter.taskNames.any { it == 'cleanPullCompTest' || it.endsWith(':cleanPullCompTest') }) {
+    allprojects { ext.conf = moquiConfTest }
+    logger.lifecycle("cleanPullCompTest: no -Pconf, so it loads and tests the test database (${moquiConfTest})")
+}
+// a test run keeps its own Bitronix journal (and with it its own server ID), so it never replays or writes the dev journal
+def testTxlogProperties = ['bitronix.tm.journal.disk.logPart1Filename': file(moquiRuntime + '/txlog-test/btm1.tlog').absolutePath,
+                           'bitronix.tm.journal.disk.logPart2Filename': file(moquiRuntime + '/txlog-test/btm2.tlog').absolutePath]
+// the aspen suite run when no -PaspenSuite is given (#1334): the flow suite; ./aspenTest.sh all runs everything
+ext.aspenDefaultSuite = 'flow'
+
 def allCleanTasks = getTasksByName('clean', true)
 def allBuildTasks = getTasksByName('build', true)
 def allTestTasks = getTasksByName('test', true)
 allTestTasks.each { it.systemProperties << System.properties.subMap(getDefaultPropertyKeys()) }
+// a test task on a test conf uses the test journal; decided when it runs, after the component set moqui.conf
+allTestTasks.each { Task t -> t.doFirst {
+    if (!isTestConf(t.systemProperties['moqui.conf'])) return
+    assertTestConfTargetsOnly("${t.path}")
+    t.systemProperties(testTxlogProperties)
+} }
 // kill the build -> check -> test dependency, only run tests explicitly and not always on build
 getTasksByName('check', true).each { it.dependsOn.clear() }
 
@@ -71,6 +100,19 @@ task clean(type: Delete) { delete file(warName); delete file(execTempDir); delet
 task cleanTempDir(type: Delete) { delete file(execTempDir) }
 task cleanDb { doLast {
     if (!file(moquiRuntime).exists()) return
+    // #1334: cleanPullCompTest always means the test database; reached with a dev conf (an abbreviated task name such as
+    // cPCT skips the detection above), refuse instead of wiping the dev database
+    if (gradle.taskGraph.hasTask(':cleanPullCompTest') && !(project.properties.containsKey('conf') && isTestConf(conf)))
+        throw new GradleException("cleanPullCompTest runs on the test database: spell the task out, or pass -Pconf=${moquiConfTest}")
+    // #1334: with a test conf, reset only the test database and the test journal; the dev database and journal are left alone
+    if (project.properties.containsKey('conf') && isTestConf(conf)) {
+        assertTestConfTargetsOnly('cleanDb')
+        if ("${conf}".contains('Db2i')) throw new GradleException("cleanDb doesn't reset Db2 for i; the MOQUITEST library is reset by hand (TESTING.md)")
+        if ("${conf}".contains('Postgres')) exec { workingDir = projectDir; commandLine './cleanPostgres.sh', 'moquitest' }
+        else delete fileTree(dir: moquiRuntime+'/db/h2', include: 'moquitest.*')
+        delete fileTree(dir: moquiRuntime+'/txlog-test', include: '*')
+        return
+    }
     // with -Pconf pointing at a Postgres conf, reset the local Postgres 'moqui' DB instead and leave the H2 files alone
     if (project.properties.containsKey('conf') && "${conf}".contains('Postgres')) {
         if ("${conf}".contains('Production')) throw new GradleException("cleanDb refuses to reset a database for production conf ${conf}")
@@ -660,6 +702,11 @@ task load(type: JavaExec) {
     def argList = [warName, 'load', (project.properties.containsKey('types') ? "types=${types}" : "types=all")]
     if (project.properties.containsKey('conf')) argList.add("conf=${conf}")
     args = argList
+    // #1334: loading a test database uses the test journal, never the dev one
+    if (project.properties.containsKey('conf') && isTestConf(conf)) {
+        systemProperties(testTxlogProperties)
+        doFirst { assertTestConfTargetsOnly('load') }
+    }
 }
 task loadSeed(type: JavaExec) {
     dependsOn checkRuntime, allBuildTasks
@@ -790,7 +837,7 @@ def defaultWarConfs = 'MoquiProductionConf.xml,MoquiProductionConfPostgres.xml'
 // A deploy WAR is a production build by default: dev-only runtime folders stay out of it (dev component, local H2 DB and
 // its data-export snapshots, the dev transaction journal, the unused ElasticSearch folder), so a release build is just
 // 'gradle cleanAllButDb build addRuntime'. -Pproduction=false puts them back.
-def productionWarExcludes = ['/component/aspendev/**', '/db/h2/**', '/db/snapshot/**', '/txlog/**', '/elasticsearch/**']
+def productionWarExcludes = ['/component/aspendev/**', '/db/h2/**', '/db/snapshot/**', '/txlog/**', '/txlog-test/**', '/elasticsearch/**']
 List<String> checkWarConfs(File confDir, String warConfsProp, boolean allowSecrets) {
     List<String> warConfs = warConfsProp.split(',')*.trim().findAll { it }
     if (!warConfs) throw new GradleException("-PwarConfs lists no conf files")
@@ -1368,5 +1415,14 @@ def cleanVersionDetailFiles() {
 
 task cleanPullLoad { dependsOn cleanAll, gitPullAll, load }
 task cleanPullTest { dependsOn cleanAll, gitPullAll, load, allTestTasks }
-task cleanPullCompTest { dependsOn cleanAll, gitPullAll, load, getComponentTestTasks() }
+// #1334: the default aspen suite is the flow suite, so cleanPullCompTest runs only aspen's tests (the flows); every
+// component's tests run under ./aspenTest.sh all.
+// On a test conf it cleans only the build and the test database (not cleanAll: that also deletes the Save*.zip dev
+// database copies, the logs and the sessions).
+task cleanPullCompTest {
+    def cleanTasks = project.hasProperty('conf') && isTestConf(project.conf) ? [clean, allCleanTasks, cleanDb] : [cleanAll]
+    def testTasks = project.aspenDefaultSuite == 'flow' && !project.hasProperty('aspenSuite') ?
+            project(':runtime:component:aspen').getTasksByName('test', false) : getComponentTestTasks()
+    dependsOn(cleanTasks, gitPullAll, load, testTasks)
+}
 task compTest { dependsOn getComponentTestTasks() }

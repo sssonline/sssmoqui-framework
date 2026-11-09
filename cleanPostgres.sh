@@ -6,6 +6,13 @@ set -e
 # non-Docker Postgres is already answering on 127.0.0.1:5432 (e.g. Postgres.app / Homebrew).
 # max_prepared_transactions is needed for Moqui's XA transactions (pool-maxsize for postgres is 90).
 # Stop any running Moqui first: DROP DATABASE fails while it holds connections.
+# #1334: ./cleanPostgres.sh moquitest resets the test database (MoquiTestConfPostgres.xml) instead and leaves 'moqui'
+# alone; a test run is the only thing holding 'moquitest' connections. No other database name is accepted.
+DB_NAME="${1:-moqui}"
+case "$DB_NAME" in
+  moqui|moquitest) ;;
+  *) echo "cleanPostgres.sh resets only 'moqui' (dev) or 'moquitest' (tests), not '$DB_NAME'"; exit 1 ;;
+esac
 unset PGHOST PGHOSTADDR PGPORT PGUSER PGPASSWORD PGDATABASE PGSERVICE PGSERVICEFILE PGPASSFILE
 
 # keep in step with the Azure server's major version
@@ -25,7 +32,7 @@ if [ "$hasContainer" = false ] && command -v pg_isready >/dev/null && pg_isready
   if [ "$($PSQL -tAc 'show max_prepared_transactions')" = "0" ]; then
     echo "WARNING: max_prepared_transactions is 0 on the local server; set it to 100 and restart Postgres or Moqui XA will fail"
   fi
-  $PSQL -c "DROP DATABASE IF EXISTS moqui;" -c "CREATE DATABASE moqui OWNER moqui;"
+  $PSQL -c "DROP DATABASE IF EXISTS $DB_NAME;" -c "CREATE DATABASE $DB_NAME OWNER moqui;"
   exit 0
 fi
 
@@ -43,4 +50,4 @@ else
   docker start moqui-postgres >/dev/null
 fi
 wait_ready
-docker exec moqui-postgres psql -U moqui -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS moqui;" -c "CREATE DATABASE moqui OWNER moqui;"
+docker exec moqui-postgres psql -U moqui -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DB_NAME;" -c "CREATE DATABASE $DB_NAME OWNER moqui;"
