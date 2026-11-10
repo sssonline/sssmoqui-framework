@@ -863,8 +863,7 @@ class ScreenRenderImpl implements ScreenRender {
 
                 String filename = ec.context.saveFilename as String
                 if (filename) {
-                    String utfFilename = StringUtilities.encodeAsciiFilename(filename)
-                    response.setHeader("Content-Disposition", "attachment; filename=\"${filename}\"; filename*=utf-8''${utfFilename}")
+                    response.setHeader("Content-Disposition", StringUtilities.contentDispositionAttachment(filename))
                 }
             }
 

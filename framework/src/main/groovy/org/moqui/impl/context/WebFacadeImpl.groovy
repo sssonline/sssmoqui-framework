@@ -816,7 +816,7 @@ class WebFacadeImpl implements WebFacade {
         if (!filename) {
             response.setHeader("Content-Disposition", "inline")
         } else {
-            response.setHeader("Content-Disposition", "attachment; filename=\"${filename}\"; filename*=utf-8''${StringUtilities.encodeAsciiFilename(filename)}")
+            response.setHeader("Content-Disposition", StringUtilities.contentDispositionAttachment(filename))
         }
 
         try {
@@ -854,7 +854,7 @@ class WebFacadeImpl implements WebFacade {
                 response.setHeader("Cache-Control", "max-age=86400, must-revalidate, public")
             }
         } else {
-            response.setHeader("Content-Disposition", "attachment; filename=\"${rr.getFileName()}\"; filename*=utf-8''${StringUtilities.encodeAsciiFilename(rr.getFileName())}")
+            response.setHeader("Content-Disposition", StringUtilities.contentDispositionAttachment(rr.getFileName()))
         }
         if (contentType == null || contentType.isEmpty() || ResourceReference.isBinaryContentType(contentType)) {
             InputStream is = rr.openStream()

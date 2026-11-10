@@ -874,7 +874,17 @@ class EntityDataDocument {
                         if ("count".equals(functionName) || "count-distinct".equals(functionName)) {
                             dynamicView.getAlias(fieldAlias)?.attributes?.put("type", "number-integer")
                         } else if ("avg".equals(functionName)) {
-                            dynamicView.getAlias(fieldAlias)?.attributes?.put("type", "number-decimal")
+                            // #1340: an average of money stays money (2 decimals, like the Sum beside it); any other
+                            // average is a plain decimal
+                            String avgType = "number-decimal"
+                            MNode memberNode = dynamicView.getViewEntityNode().first({ MNode it ->
+                                    it.name == "member-entity" && it.attribute("entity-alias") == entityAlias })
+                            String memberEntityName = memberNode?.attribute("entity-name")
+                            if (memberEntityName) {
+                                FieldInfo srcFi = dynamicView.efi.getEntityDefinition(memberEntityName)?.getFieldInfo(fieldEntryKey)
+                                if (srcFi != null && srcFi.type != null && srcFi.type.startsWith("currency-")) avgType = srcFi.type
+                            }
+                            dynamicView.getAlias(fieldAlias)?.attributes?.put("type", avgType)
                         }
                     }
                 }

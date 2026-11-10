@@ -81,8 +81,7 @@ class MoquiPoiServlet extends HttpServlet {
 
             String filename = (ec.web.parameters.get("filename") as String) ?: (ec.web.parameters.get("saveFilename") as String)
             if (filename) {
-                String utfFilename = StringUtilities.encodeAsciiFilename(filename)
-                response.addHeader("Content-Disposition", "attachment; filename=\"${filename}\"; filename*=utf-8''${utfFilename}")
+                response.addHeader("Content-Disposition", StringUtilities.contentDispositionAttachment(filename))
             } else {
                 response.addHeader("Content-Disposition", "inline")
             }

@@ -357,14 +357,46 @@ public class StringUtilities {
         return new String(cnChars);
     }
 
+    /** The value for a Content-Disposition filename* parameter (RFC 5987/8187 ext-value without the charset prefix):
+     * the UTF-8 bytes of the name with every byte outside attr-char percent-encoded. sssonline local patch (Simple Report
+     * #1340): this used URI path encoding, which left , ; ( ) ' = @ : and others raw, and a raw comma split the header
+     * into two values, so Chrome refused the download. */
     public static String encodeAsciiFilename(String filename) {
-        try {
-            URI uri = new URI(null, null, filename, null);
-            return uri.toASCIIString();
-        } catch (URISyntaxException e) {
-            logger.warn("Error encoding ASCII filename: " + e.toString());
-            return filename;
+        if (filename == null) return "";
+        byte[] bytes = filename.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        StringBuilder sb = new StringBuilder(bytes.length * 3);
+        for (byte b : bytes) {
+            int c = b & 0xFF;
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '!' || c == '#' ||
+                    c == '$' || c == '&' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_' || c == '`' ||
+                    c == '|' || c == '~') {
+                sb.append((char) c);
+            } else {
+                sb.append('%');
+                sb.append(Character.toUpperCase(Character.forDigit((c >> 4) & 0xF, 16)));
+                sb.append(Character.toUpperCase(Character.forDigit(c & 0xF, 16)));
+            }
         }
+        return sb.toString();
+    }
+    /** The plain filename="..." fallback for browsers that ignore filename*: printable ASCII only, with the quote and
+     * backslash (which end or escape the quoted string) and every control or non-ASCII character made an underscore,
+     * so no file name can break or inject into the header. sssonline local patch (Simple Report #1340). */
+    public static String quotedAsciiFilename(String filename) {
+        if (filename == null) return "";
+        StringBuilder sb = new StringBuilder(filename.length());
+        for (int i = 0; i < filename.length(); i++) {
+            char c = filename.charAt(i);
+            if (c < 0x20 || c > 0x7E || c == '"' || c == '\\') sb.append('_');
+            else sb.append(c);
+        }
+        return sb.toString();
+    }
+    /** A complete Content-Disposition header value for a download: attachment; filename="ascii"; filename*=UTF-8''encoded.
+     * Every framework download writer uses this so any report or file name downloads (sssonline local patch, #1340). */
+    public static String contentDispositionAttachment(String filename) {
+        String clean = filename == null ? "" : filename.replaceAll("[\\r\\n\\t]+", " ").trim();
+        return "attachment; filename=\"" + quotedAsciiFilename(clean) + "\"; filename*=UTF-8''" + encodeAsciiFilename(clean);
     }
 
     public static String toStringCleanBom(byte[] bytes) {

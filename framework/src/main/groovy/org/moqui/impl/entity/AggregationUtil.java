@@ -149,7 +149,19 @@ public class AggregationUtil {
             // a screen can label the totals row by naming the field (column) to put the label in, e.g. "Page Total"
             Object labelField = eci.contextStack.get("formListTotalsLabelField");
             Object labelText = eci.contextStack.get("formListTotalsLabel");
-            if (labelField instanceof String && labelText != null && totalsRow.get(labelField) == null)
+            // #1340: or by naming the shown columns in order (formListTotalsLabelFields), so the label goes into the first
+            // empty cell even when the first shown column holds a total
+            Object labelFields = eci.contextStack.get("formListTotalsLabelFields");
+            if (labelText != null && labelFields instanceof Collection && !((Collection) labelFields).isEmpty()) {
+                for (Object lf : (java.util.Collection) labelFields) {
+                    if (!(lf instanceof String)) continue;
+                    Object cur = totalsRow.get(lf);
+                    if (cur == null || (cur instanceof CharSequence && ((CharSequence) cur).length() == 0)) {
+                        totalsRow.put((String) lf, labelText.toString());
+                        break;
+                    }
+                }
+            } else if (labelField instanceof String && labelText != null && totalsRow.get(labelField) == null)
                 totalsRow.put((String) labelField, labelText.toString());
             resultList.add(totalsRow);
         }
