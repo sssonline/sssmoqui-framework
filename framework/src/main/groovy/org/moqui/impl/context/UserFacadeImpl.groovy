@@ -119,9 +119,13 @@ class UserFacadeImpl implements UserFacade {
                         .condition(usernameCond).useCache(false).disableAuthz().one()
             }
 
-            if (userAccount != null && "Y".equals(userAccount.getNoCheckSimple("hasLoggedOut"))) {
+            // card #1298: also end the session of a login an administrator disabled (disabled=Y with no disabledDateTime;
+            // a timed lockout has one), as a safety net beside the hasLoggedOut flag the shared disable sets
+            boolean adminDisabled = userAccount != null && "Y".equals(userAccount.getNoCheckSimple("disabled")) &&
+                    userAccount.getNoCheckSimple("disabledDateTime") == null
+            if (userAccount != null && ("Y".equals(userAccount.getNoCheckSimple("hasLoggedOut")) || adminDisabled)) {
                 // logout user through Shiro, invalidate session, continue
-                logger.warn("User ${sesUsername} is authenticated in session but hasLoggedOut elsewhere, logging out")
+                logger.warn("User ${sesUsername} is authenticated in session but ${adminDisabled ? 'the login is disabled' : 'hasLoggedOut elsewhere'}, logging out")
                 webSubject.logout()
                 // Shiro invalidates session, but make sure just in case
                 HttpSession oldSession = request.getSession(false)
@@ -303,7 +307,6 @@ class UserFacadeImpl implements UserFacade {
         if (currentInfo.username == null && (parameters.api_key || parameters.login_key)) {
             String loginKey = parameters.api_key ? parameters.api_key.get(0) : (parameters.login_key ? parameters.login_key.get(0) : null)
             loginKey = loginKey.trim()
-            logger.warn("loginKey2 ${loginKey}")
             if (loginKey != null && !loginKey.isEmpty() && !"null".equals(loginKey) && !"undefined".equals(loginKey))
                 this.loginUserKey(loginKey)
         }

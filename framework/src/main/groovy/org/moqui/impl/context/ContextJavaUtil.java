@@ -253,6 +253,21 @@ public class ContextJavaUtil {
                 referrerUrl = wfi.getRequest().getHeader("Referer");
             }
         }
+        /** Card #1298: parameters never written to the hit log. Any name containing "password" in any case (newPassword,
+         *  oldPassword, newPasswordVerify, resetPassword, currentPassword were all logged before: the check was
+         *  case-sensitive), and a party setting's settingValue when its partySettingTypeId names a password
+         *  (Internal Org Settings posts the iSeries, mail and share passwords that way). */
+        public static boolean isSecretHitParameter(String key, Map<String, Object> parameters) {
+            if (key == null) return false;
+            String lowerKey = key.toLowerCase();
+            if (lowerKey.contains("password")) return true;
+            if ("settingvalue".equals(lowerKey) && parameters != null) {
+                Object settingType = parameters.get("partySettingTypeId");
+                if (settingType != null && settingType.toString().toLowerCase().contains("password")) return true;
+            }
+            return false;
+        }
+
         EntityValue makeAhiValue(ExecutionContextFactoryImpl ecfi) {
             EntityValueBase ahp = (EntityValueBase) ecfi.entityFacade.makeValue("moqui.server.ArtifactHit");
             ahp.put("visitId", visitId);
@@ -270,7 +285,7 @@ public class ContextJavaUtil {
                     Object value = pme.getValue();
                     if (value == null || ObjectUtilities.isEmpty(value) || value instanceof Map || value instanceof Collection) continue;
                     String key = pme.getKey();
-                    if (key != null && key.contains("password")) continue;
+                    if (isSecretHitParameter(key, parameters)) continue;
                     if (ps.length() > 0) ps.append(", ");
                     String valString = value.toString();
                     if (valString.length() > 80) valString = valString.substring(0, 80);

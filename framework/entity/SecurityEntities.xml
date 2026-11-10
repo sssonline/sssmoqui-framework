@@ -250,6 +250,9 @@ along with this software (see the LICENSE.md file). If not, see
             <description>NOTE: not an encrypted field because one way hash encryption used for it</description></field>
         <field name="resetPassword" type="text-medium">
             <description>Set to random password for password reset, can be used only to update password</description></field>
+        <field name="resetPasswordDate" type="date-time">
+            <description>When resetPassword was issued (card #1298). A resetPassword older than user-facade.password.@email-expire-hours,
+                or with no issue date (issued before this field existed), no longer works.</description></field>
         <field name="passwordSalt" type="text-medium"/>
         <field name="passwordHashType" type="text-short"/>
         <field name="passwordBase64" type="text-indicator">

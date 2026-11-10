@@ -178,6 +178,10 @@ along with this software (see the LICENSE.md file). If not, see
             <set field="username" from="userAccount.username"/>
 
             <if condition="!hasPwAdminPermission">
+                <!-- card #1298: a login an administrator disabled (disabled=Y with no disabledDateTime; a timed lockout has one)
+                     can't change its own password; Set Password by an administrator still works and keeps it disabled -->
+                <if condition="userAccount.disabled == 'Y' &amp;&amp; !userAccount.disabledDateTime">
+                    <return message="This login is disabled. Contact an administrator." public="true" type="danger"/></if>
                 <if condition="ec.user.userId &amp;&amp; userId != ec.user.userId">
                     <return message="Cannot update the password of another user without password admin permission" public="true" type="danger"/></if>
 
@@ -215,6 +219,11 @@ along with this software (see the LICENSE.md file). If not, see
                     </script>
                     <if condition="!userAccount.currentPassword || !ec.ecfi.getCredentialsMatcher(userAccount.passwordHashType, 'Y'.equals(userAccount.passwordBase64)).doCredentialsMatch(token, info)">
                         <if condition="userAccount.resetPassword"><then>
+                            <!-- card #1298: the reset password expires after email-expire-hours (default 48); one with no issue
+                                 date was issued before the expiry existed and no longer works -->
+                            <set field="resetExpireHours" from="ec.ecfi.confXmlRoot.first('user-facade').first('password').attribute('email-expire-hours') ?: '48'" type="Integer"/>
+                            <if condition="!userAccount.resetPasswordDate || userAccount.resetPasswordDate.time + resetExpireHours * 3600000L &lt; ec.user.nowTimestamp.time">
+                                <return message="The temporary password for ${username} has expired. Request a new one with Forgot Password." public="true" type="danger"/></if>
                             <!-- try the resetPassword -->
                             <script>
                                 info = new org.apache.shiro.authc.SimpleAuthenticationInfo(userAccount.username, userAccount.resetPassword,
@@ -270,7 +279,6 @@ along with this software (see the LICENSE.md file). If not, see
             <parameter name="updateSuccessful" type="Boolean"/>
         </out-parameters>
         <actions>
-            <log level="error" message="inside reset Password service"/>
             <set field="hasPwAdminPermission" from="ec.user.hasPermission('ADMIN_PASSWORD')"/>
             <set field="passwordIssues" from="false"/>
             <set field="updateSuccessful" from="false"/>
@@ -299,6 +307,11 @@ along with this software (see the LICENSE.md file). If not, see
             <set field="username" from="userAccount.username"/>
 
             <if condition="!hasPwAdminPermission">
+                <!-- card #1298: an administrator-disabled login can't use its reset password -->
+                <if condition="userAccount.disabled == 'Y' &amp;&amp; !userAccount.disabledDateTime">
+                    <script>ec.message.addError("This login is disabled. Contact an administrator.")</script>
+                    <return public="true" error="true"/>
+                </if>
                 <service-call name="org.moqui.impl.UserServices.get#UserAuthcFactorRequired" out-map="context">
                     <field-map field-name="userId"/>
                 </service-call>
@@ -330,6 +343,13 @@ along with this software (see the LICENSE.md file). If not, see
                         <script>
                             ec.message.addError("No reset password is set for user ${username}. Please request a password reset first.")
                         </script>
+                        <return public="true" error="true"/>
+                    </if>
+
+                    <!-- card #1298: the reset password expires after email-expire-hours (default 48) -->
+                    <set field="resetExpireHours" from="ec.ecfi.confXmlRoot.first('user-facade').first('password').attribute('email-expire-hours') ?: '48'" type="Integer"/>
+                    <if condition="!userAccount.resetPasswordDate || userAccount.resetPasswordDate.time + resetExpireHours * 3600000L &lt; ec.user.nowTimestamp.time">
+                        <script>ec.message.addError("The temporary password for ${username} has expired. Request a new one with Forgot Password.")</script>
                         <return public="true" error="true"/>
                     </if>
 
@@ -465,6 +485,8 @@ along with this software (see the LICENSE.md file). If not, see
 
             <!-- encrypt password (using password.@encrypt-hash-type default SHA-256) and save -->
             <set field="salt" from="ec.ecfi.randomSalt"/>
+            <!-- card #1298: setting a password clears a timed lockout but never turns an administrator's disable off -->
+            <set field="keepDisabled" from="userAccount.disabled == 'Y' &amp;&amp; !userAccount.disabledDateTime"/>
             <service-call name="update#moqui.security.UserAccount">
                 <field-map field-name="userId"/>
                 <field-map field-name="currentPassword" from="ec.ecfi.getSimpleHash(newPassword, salt)"/>
@@ -474,7 +496,8 @@ along with this software (see the LICENSE.md file). If not, see
                 <field-map field-name="passwordSetDate" from="ec.user.nowTimestamp"/>
                 <field-map field-name="requirePasswordChange"/>
                 <field-map field-name="resetPassword" from="null"/>
-                <field-map field-name="disabled" value="N"/>
+                <field-map field-name="resetPasswordDate" from="null"/>
+                <field-map field-name="disabled" from="keepDisabled ? 'Y' : 'N'"/>
             </service-call>
             <set field="updateSuccessful" from="true"/>
         </actions>
@@ -511,7 +534,7 @@ along with this software (see the LICENSE.md file). If not, see
             <if condition="baseAppUrl"><then>
                 <set field="baseUrl" from="baseAppUrl.settingValue"/>
             </then><else>
-                <set field="baseUrl" from="ec.web.getWebappRootUrl(true, null)"/>
+                <set field="baseUrl" from="ec.web?.getWebappRootUrl(true, null)"/>
             </else></if>
 
             <!-- find by userId -->
@@ -534,20 +557,45 @@ along with this software (see the LICENSE.md file). If not, see
                 <message public="true" type="danger">Account with username ${username} does not have an email address</message>
                 <return error="true" message="Account has no email address"/>
             </if>
+            <!-- card #1298: a login an administrator disabled gets no reset (a temporary lockout after failed logins still does) -->
+            <if condition="userAccount.disabled == 'Y' &amp;&amp; !userAccount.disabledDateTime">
+                <message public="true" type="danger">The login ${userAccount.username} is disabled. Contact an administrator.</message>
+                <return error="true" message="Login disabled"/>
+            </if>
 
-            <!-- reset the password to a random value -->
+            <!-- card #1298: report success only when the email reached a working mail server. Check the template's server
+                 first (send#EmailTemplate quietly skips a server with no SMTP host), then send synchronously and store the
+                 temporary password only once the server accepted the email, so a password nobody received never works. -->
+            <entity-find-one entity-name="moqui.basic.email.EmailTemplate" value-field="resetEmailTemplate">
+                <field-map field-name="emailTemplateId"/></entity-find-one>
+            <set field="resetEmailServer" from="resetEmailTemplate?.emailServerId ? ec.entity.find('moqui.basic.email.EmailServer').condition('emailServerId', resetEmailTemplate.emailServerId).one() : null"/>
+            <if condition="resetEmailTemplate == null || resetEmailServer == null || !resetEmailServer.smtpHost || !resetEmailTemplate.fromAddress">
+                <log level="warn" message="Password reset for ${userAccount.username} not sent: email template ${emailTemplateId} has no working mail server (template, server, SMTP host or from address missing)"/>
+                <message public="true" type="danger">The reset email could not be sent because outgoing email is not set up. Contact an administrator.</message>
+                <return error="true" message="Reset email not sent"/>
+            </if>
+
             <set field="resetPassword" from="getRandomString(12)"/>
             <set field="passwordNode" from="ec.ecfi.confXmlRoot.first('user-facade').first('password')"/>
-            <set field="userAccount.resetPassword" from="ec.ecfi.getSimpleHash(resetPassword, userAccount.passwordSalt, userAccount.passwordHashType, 'Y'.equals(userAccount.passwordBase64))"/>
-            <set field="userAccount.requirePasswordChange" from="(passwordNode.attribute('email-require-change') == 'true') ? 'Y' : 'N'"/>
-            <entity-update value-field="userAccount"/>
-
-            <!-- send an email with the new password -->
-            <service-call name="org.moqui.impl.EmailServices.send#EmailTemplate" async="true">
+            <!-- a reset never clears a pending Require Password Change; it only sets one when the conf asks (set before the
+                 send because the email says so, saved with the password below) -->
+            <if condition="passwordNode.attribute('email-require-change') == 'true'">
+                <set field="userAccount.requirePasswordChange" value="Y"/></if>
+            <service-call name="org.moqui.impl.EmailServices.send#EmailTemplate" out-map="resetSendOut" out-map-add-to-existing="false">
                 <field-map field-name="emailTemplateId"/>
                 <field-map field-name="toAddresses" from="userAccount.emailAddress"/>
                 <field-map field-name="bodyParameters" from="bodyParameters + [userAccount:userAccount, resetPassword:resetPassword, baseUrl:baseUrl]"/>
             </service-call>
+            <if condition="!resetSendOut?.messageId">
+                <message public="true" type="danger">The reset email could not be sent. Try again later or contact an administrator.</message>
+                <return error="true" message="Reset email not sent"/>
+            </if>
+
+            <!-- the email went out: store the hashed temporary password with its issue date (it expires after
+                 email-expire-hours) -->
+            <set field="userAccount.resetPassword" from="ec.ecfi.getSimpleHash(resetPassword, userAccount.passwordSalt, userAccount.passwordHashType, 'Y'.equals(userAccount.passwordBase64))"/>
+            <set field="userAccount.resetPasswordDate" from="ec.user.nowTimestamp"/>
+            <entity-update value-field="userAccount"/>
             <message public="true" type="success">A reset password was sent to the email of username ${userAccount.username}. This password may only be used to change your password. Your current password is still valid.</message>
             <if condition="userAccount.requirePasswordChange == 'Y'"><message public="true" type="info">You must change your password before login.</message></if>
         </actions>
