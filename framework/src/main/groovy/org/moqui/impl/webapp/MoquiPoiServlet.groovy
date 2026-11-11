@@ -146,9 +146,12 @@ class MoquiPoiServlet extends HttpServlet {
 
         for( int i = 0; i < lists.size(); i++ ) {
             // TODO: If the title is blank, default to a generic title
-            // TODO: Probably skip if there are no columns.
-            def title   = lists[i]["title"].toString().replaceAll(/\s+/, ' ')
             def columns = (ArrayList)lists[i]["columns"]
+            // sssonline local patch (#1061, AP Open Invoices 11/11): a container-box with no grid in it (only a
+            // form-single, or a grid section whose condition is false) renders as {"title":"...",} with no columns;
+            // skip it rather than throw on columns.size(), which broke "All Forms on This Page"
+            if (!columns) continue
+            def title   = lists[i]["title"].toString().replaceAll(/\s+/, ' ')
             def data    = (ArrayList)lists[i]["data"]
             // per-column type hints from the json render ("text"/"auto"), aligned with columns;
             // null when the producer doesn't emit them — value sniffing then decides alone (card #943)
