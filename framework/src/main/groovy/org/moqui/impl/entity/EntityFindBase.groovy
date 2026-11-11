@@ -14,6 +14,7 @@
 package org.moqui.impl.entity
 
 import groovy.transform.CompileStatic
+import org.moqui.BaseArtifactException
 import org.moqui.BaseException
 import org.moqui.context.ArtifactAuthorizationException
 import org.moqui.context.ArtifactExecutionInfo
@@ -31,6 +32,7 @@ import org.moqui.impl.entity.EntityJavaUtil.FieldOrderOptions
 import org.moqui.util.CollectionUtilities
 import org.moqui.util.MNode
 import org.moqui.util.ObjectUtilities
+import org.moqui.util.StringUtilities
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -427,6 +429,21 @@ abstract class EntityFindBase implements EntityFind {
         return this
     }
 
+    /** #1319 (Aspen): Integer, Long, Float, Double or BigDecimal field */
+    protected static boolean isNumberField(FieldInfo fi) { return fi.typeValue >= 5 && fi.typeValue <= 9 }
+
+    /** #1319 (Aspen): convert a search value to the field's type. For a number field a value that is not a number
+     * returns null with a warning, so that one filter is skipped instead of failing the whole find (and the screen). */
+    protected static Object convertSearchValue(EntityDefinition ed, FieldInfo fi, String value, ExecutionContextImpl ec) {
+        if (!isNumberField(fi)) return ed.convertFieldString(fi.name, value, ec)
+        try {
+            return ed.convertFieldString(fi.name, value, ec)
+        } catch (BaseArtifactException e) {
+            ec.messageFacade.addMessage(StringUtilities.camelCaseToPretty(fi.name) + " must be a number; that search filter was ignored", "warning")
+            return null
+        }
+    }
+
     protected boolean processInputFields(Map<String, Object> inputFieldsMap, Set<String> skipFieldSet, ExecutionContextImpl ec) {
         EntityDefinition ed = getEntityDef()
         boolean addedConditions = false
@@ -448,7 +465,9 @@ abstract class EntityFindBase implements EntityFind {
                 switch (op) {
                     case "equals":
                         if (!valueEmpty) {
-                            Object convertedValue = value instanceof String ? ed.convertFieldString(fn, (String) value, ec) : value
+                            Object convertedValue = value instanceof String ? convertSearchValue(ed, fi, (String) value, ec) : value
+                            // #1319: a number filter whose value is not a number is skipped (convertSearchValue warned)
+                            if (convertedValue == null && isNumberField(fi)) break
                             cond = efi.entityConditionFactory.makeCondition(fn,
                                     not ? EntityCondition.NOT_EQUAL : EntityCondition.EQUALS, convertedValue, not)
                             if (ic) cond.ignoreCase()
@@ -476,6 +495,11 @@ abstract class EntityFindBase implements EntityFind {
                         }
                         break
                     case "empty":
+                        // #1319: a number column can only be null, never '' (PostgreSQL refuses comparing a number to '')
+                        if (isNumberField(fi)) {
+                            cond = efi.entityConditionFactory.makeCondition(fn, not ? EntityCondition.NOT_EQUAL : EntityCondition.EQUALS, null)
+                            break
+                        }
                         cond = efi.entityConditionFactory.makeCondition(
                                 efi.entityConditionFactory.makeCondition(fn,
                                         not ? EntityCondition.NOT_EQUAL : EntityCondition.EQUALS, null),
@@ -517,13 +541,13 @@ abstract class EntityFindBase implements EntityFind {
                 if (fromValue && fromValue instanceof CharSequence) {
                     if (fi.typeValue == 2 && fromValue.length() < 12)
                         fromValue = ec.l10nFacade.parseTimestamp(fromValue.toString() + " 00:00:00.000", "yyyy-MM-dd HH:mm:ss.SSS")
-                    else fromValue = ed.convertFieldString(fn, fromValue.toString(), ec)
+                    else fromValue = convertSearchValue(ed, fi, fromValue.toString(), ec)
                 }
                 Object thruValue = inputFieldsMap.get(fn + "_thru")
                 if (thruValue && thruValue instanceof CharSequence) {
                     if (fi.typeValue == 2 && thruValue.length() < 12)
                         thruValue = ec.l10nFacade.parseTimestamp(thruValue.toString() + " 23:59:59.999", "yyyy-MM-dd HH:mm:ss.SSS")
-                    else thruValue = ed.convertFieldString(fn, thruValue.toString(), ec)
+                    else thruValue = convertSearchValue(ed, fi, thruValue.toString(), ec)
                 }
 
                 if (!ObjectUtilities.isEmpty(fromValue)) {

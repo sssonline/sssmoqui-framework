@@ -79,9 +79,18 @@ public class FieldValueCondition implements EntityConditionImplBase, Externaliza
                 valueDone = true;
             }
         } else {
+            // #1319 (Aspen): LIKE against a number column (Integer, Long, Float, Double, BigDecimal) compares its text form, so
+            //     typing 91 still finds 9100 on every database. H2 and Db2i allowed LIKE on a number; PostgreSQL refuses it
+            //     ("operator does not exist"). CAST ... AS VARCHAR(n) is standard SQL on H2, PostgreSQL and Db2 for i.
+            boolean likeOnNumber = (operator == LIKE || operator == NOT_LIKE) && fi.typeValue >= 5 && fi.typeValue <= 9 && value != null;
+            if (likeOnNumber) {
+                sql.append("CAST(");
+                if (!(value instanceof CharSequence)) value = value.toString();
+            }
             if (ignoreCase && fi.typeValue == 1) sql.append("UPPER(");
             sql.append(field.getColumnName(curEd));
             if (ignoreCase && fi.typeValue == 1) sql.append(')');
+            if (likeOnNumber) sql.append(" AS VARCHAR(60))");
             sql.append(' ');
 
             if (value == null) {
