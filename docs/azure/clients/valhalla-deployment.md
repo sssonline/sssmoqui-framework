@@ -58,7 +58,7 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | Monitoring cost | ~$5–12/mo | Estimate 2026-10-28: availability test ~$5/location/mo at 5-min runs (use 1–2 locations); 7 alert rules <$1; emails free; logs within free 5 GB |
 
 ## Open questions (ask the client or decide internally)
-- [x] IT contact: **SSS is Valhalla's IT** (they have no IT staff). So DNS, email sender setup, user accounts and support all land on us. Exception (2026-10-28): Valhalla's own email domain is handled by a separate IT department; email details are being requested from them
+- [x] IT contact: **Valhalla has its own IT company.** It handles Valhalla's devices, browsers, printers, network, email domain (`valhallasales.com`, Microsoft 365) and DNS records. SSS handles Aspen and the Azure hosting, and coordinates with Valhalla's IT company for DNS records and workstation setup (e.g., QZ Tray for printing). Work on Valhalla's own systems is billable at the Hourly Rate (MSA Exhibit C, "Customer responsibilities"). Corrected 2026-11-12: an earlier version of this note said SSS was Valhalla's IT.
 - [ ] D3: exactly what comes over at go-live (GL trial balance as of cutover date? open AR invoices? open AP? inventory on hand + cost?) and from what system/format
 - [x] D14: `valhalla.spokanesoftware.com`. Email sender domain still open: spokanesoftware.com mail is on Microsoft 365 (MX `spokanesoftware-com.mail.protection.outlook.com`), so ACS sending from it needs SPF/DKIM records added in Cloudflare alongside M365's
 - [ ] Integrations: payment gateway? EDI with any trading partners? bank feeds? (each adds outbound/inbound network rules)
@@ -93,6 +93,13 @@ Phase numbers refer to `../INSTALL.md`.
 - [ ] Invoice email to a safe address (phase 18)
 - [ ] Job-error email to support@sssonline.com (phase 19; confirms on the first real job failure)
 - [ ] `backup-overdue` alert fires: threshold `1`, wait for the 12:00 UTC report, set back to `800` (phase 21)
+
+## Dated reminders
+- [ ] **ACS Email retires 2028-09-30** (Microsoft retirement guide, noted 2026-11-02; see D11). Replace it before then:
+  - [ ] **By 2028-04-01:** choose the replacement email provider (Postmark was the priced alternative, ~$15/mo).
+  - [ ] **By 2028-07-01:** send Valhalla written notice of the new provider. The contract requires at least 30 days' notice before a new sub-processor handles Valhalla's data (MSA §12.6, Exhibit F §7.2); 90 days gives Valhalla's IT company time to add the DNS records. Update the sub-processor list in Exhibit F Appendix 1 (the Microsoft entry names Azure Communication Services Email).
+  - [ ] Valhalla's IT company adds the new provider's domain-verification and SPF/DKIM records (Exhibit C, "Customer responsibilities"); SSS sends them the exact records.
+  - [ ] Switch Aspen's `SYSTEM` email server to the new provider, rerun the password reset and invoice email tests, then delete `acs-aspen-valhalla`, `email-aspen-valhalla` and the `aspen-valhalla-smtp` app registration.
 
 ## Postgres dialect fixes (from code sweep, Oct 2026)
 | Status | Where | Problem on Postgres | Fix |
