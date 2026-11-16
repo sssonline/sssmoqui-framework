@@ -455,6 +455,11 @@ along with this software (see the LICENSE.md file). If not, see
     </xs:annotation><xs:complexType>
         <xs:sequence><xs:element minOccurs="0" maxOccurs="unbounded" ref="field-ref"/></xs:sequence>
         <xs:attribute name="title" type="xs:string"/>
+        <xs:attribute name="tooltip" type="xs:string"><xs:annotation><xs:documentation>Help shown as an in-app tooltip
+            on the row's title, for a row of inputs that share that one label (City/Zip, Phone): written for the whole row.
+            It replaces the inputs' own help in this row, so they show none (a shared field definition keeps its tooltips
+            for other layouts). Only rendered when title is set. Supported by the vuet render mode
+            (sssonline #1099).</xs:documentation></xs:annotation></xs:attribute>
     </xs:complexType></xs:element>
     <xs:element name="field-ref"><xs:complexType>
         <xs:attribute name="name" type="name-parameter" use="required"/></xs:complexType></xs:element>
@@ -759,6 +764,20 @@ along with this software (see the LICENSE.md file). If not, see
         </xs:attribute>
         <xs:attribute name="container-style" type="xs:string"><xs:annotation><xs:documentation>A style (HTML class)
             for the container around the field (table cell, etc).</xs:documentation></xs:annotation></xs:attribute>
+        <xs:attribute name="tooltip" type="xs:string">
+            <xs:annotation><xs:documentation>Help for the filter: shown on the Find popup (header dialog) label and, ahead of
+                the other sub-fields' help, on the column header; can use the ${} syntax.</xs:documentation></xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="tooltip-on-header" default="true">
+            <xs:annotation><xs:documentation>Where this field's tooltip (its help) shows. true (the default): once, as an
+                in-app tooltip on the field's label (form-single, Find popup) or its column header (form-list), and not on the
+                input, drop-down or displayed value; when the field has no visible label or header the input keeps it as an
+                in-app bubble. false: the help stays on the input as an in-app bubble and is not used for the label/header.
+                In a form-list the header shows one help per field: the header-field (Find popup filter) help, else the
+                first-row-field (entry row) help, else later rows, else the default-field help, else the first
+                conditional-field help with one. Supported by the vuet render mode (sssonline #1099).</xs:documentation></xs:annotation>
+            <xs:simpleType><xs:restriction base="xs:token"><xs:enumeration value="true"/><xs:enumeration value="false"/></xs:restriction></xs:simpleType>
+        </xs:attribute>
     </xs:complexType></xs:element>
     <xs:element name="conditional-field" type="form-list-conditional-field"/>
     <xs:element name="default-field" type="form-list-default-field"/>
@@ -782,7 +801,18 @@ along with this software (see the LICENSE.md file). If not, see
         </xs:attribute>
         <xs:attribute name="tooltip" type="xs:string">
             <xs:annotation><xs:documentation>The text to show on mouse over or help for more information; can use
-                the ${} and map.key (dot) syntax to insert values from the context.</xs:documentation></xs:annotation>
+                the ${} and map.key (dot) syntax to insert values from the context. Shown on the field's label or column
+                header, not the input (see tooltip-on-header).</xs:documentation></xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="tooltip-on-header" default="true">
+            <xs:annotation><xs:documentation>Where this field's tooltip (its help) shows. true (the default): once, as an
+                in-app tooltip on the field's label (form-single, Find popup) or its column header (form-list), and not on the
+                input, drop-down or displayed value; when the field has no visible label or header the input keeps it as an
+                in-app bubble. false: the help stays on the input as an in-app bubble and is not used for the label/header.
+                In a form-list the header shows one help per field: the header-field (Find popup filter) help, else the
+                first-row-field (entry row) help, else later rows, else the default-field help, else the first
+                conditional-field help with one. Supported by the vuet render mode (sssonline #1099).</xs:documentation></xs:annotation>
+            <xs:simpleType><xs:restriction base="xs:token"><xs:enumeration value="true"/><xs:enumeration value="false"/></xs:restriction></xs:simpleType>
         </xs:attribute>
         <xs:attribute name="red-when" default="by-name">
             <xs:annotation><xs:documentation>The widget/interaction part will be red if the date value is before-now
