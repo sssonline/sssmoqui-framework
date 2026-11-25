@@ -210,9 +210,8 @@ psql "host=<pg-host> dbname=aspen user=aspen_app sslmode=verify-full sslrootcert
 
 ## 8. Build and stage the release ✅ (Mac → VM)
 
-On the Mac, from the moqui root, with every repo on `update`, pulled, and the Postgres suite green:
+On the Mac, from the moqui root, with every repo on `update`, pulled, and `./aspenTest.sh --db postgres flow` green (see [UPDATE.md](UPDATE.md) step 3):
 ```bash
-gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml     # local Postgres 18, must pass
 ./gradlew cleanAllButDb build addRuntime                           # -> moqui-plus-runtime.war (~100 MB)
 ```
 > Pitfall: `gitPullAll` only *logs* a failed pull (e.g. uncommitted local edits overlapping incoming changes) and carries on. Before trusting a build, check every repo is clean and not behind: `for r in . runtime runtime/component/*/; do echo "$r $(git -C $r status --porcelain | wc -l) dirty, behind $(git -C $r rev-list --count HEAD..@{u})"; done`.
