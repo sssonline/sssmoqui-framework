@@ -72,7 +72,7 @@ public class FieldInfo {
         // column name: see if there is a name-replace
         String groupName = ed.getEntityGroupName();
         MNode databaseNode = ed.efi.getDatabaseNode(groupName);
-        // some datasources do not have a database node, like the Elastic Entity one
+        // some datasources do not have a database node
         if (databaseNode != null) {
             ArrayList<MNode> nameReplaceNodes = databaseNode.children("name-replace");
             for (int i = 0; i < nameReplaceNodes.size(); i++) {

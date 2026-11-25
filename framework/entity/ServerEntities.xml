@@ -42,16 +42,6 @@ along with this software (see the LICENSE.md file). If not, see
         <index name="ARTIFACT_HIT_VST"><index-field name="visitId"/></index>
         <index name="ARTIFACT_HIT_USR"><index-field name="userId"/></index>
     </entity>
-    <!-- to use Elastic/OpenSearch for ArtifactHit: add to logging group which is configured by default to use the 'default' cluster via ElasticFacade -->
-    <!-- TODO: make sure this is commented this before merging!! (not great as default config) -->
-    <!-- <extend-entity entity-name="ArtifactHit" package="moqui.server" group="logging"/> -->
-    <!--
-        TODO for migration:
-        - somehow have ArtifactHitDb always in 'transactional' group to read from and write to ArtifactHit in the logging group
-        - some way to clone entity to new name, with different group/etc?
-        - or some way to do entity operations and override the group name at runtime? might be handy for other things too...
-    -->
-
     <entity entity-name="ArtifactHitBin" package="moqui.server" use="nontransactional" cache="never" sequence-bank-size="100">
         <field name="hitBinId" type="id" is-pk="true"/>
         <field name="artifactType" type="text-medium"/>
@@ -243,7 +233,6 @@ along with this software (see the LICENSE.md file). If not, see
                 <vols mountPoint="/opt/moqui/runtime/txlog" volumeName="${appInstance.hostName.replace('.', '_')}-runtime_txlog"/>
                 <vols mountPoint="/opt/moqui/runtime/sessions" volumeName="${appInstance.hostName.replace('.', '_')}-runtime_sessions"/>
                 <vols mountPoint="/opt/moqui/runtime/db" volumeName="${appInstance.hostName.replace('.', '_')}-runtime_db"/>
-                <vols mountPoint="/opt/moqui/runtime/elasticsearch" volumeName="${appInstance.hostName.replace('.', '_')}-runtime_elasticsearch"/>
             </moqui.server.instance.InstanceImageType>
 
             <!-- these have no registryLocation, username, etc as they are intended to be pulled from Docker Hub -->

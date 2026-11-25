@@ -4,7 +4,6 @@
     <component name="mantle-udm" group="sssonline" version="" branch="master" repository="github-ssh"/>
     <component name="mantle-usl" group="sssonline" version="" branch="master" repository="github-ssh"/>
     <component name="mantle-edi" group="sssonline" version="" branch="master" repository="github-ssh"/>
-    <!--<component name="moqui-elasticsearch" group="sssonline" version="" branch="master" repository="github-ssh"/>-->
     <component name="moqui-fop" group="sssonline" version="" branch="master" repository="github-ssh"/>
     <component name="SimpleScreens" group="sssonline" version="" branch="master" repository="github-ssh"/>
     <component name="HiveMind" group="sssonline" version="" branch="master" repository="github-ssh"/>

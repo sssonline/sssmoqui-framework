@@ -900,7 +900,6 @@ along with this software (see the LICENSE.md file). If not, see
         </actions>
     </service>
 
-    <!-- org.moqui.impl.WikiServices.index#WikiSpacePages moved to org.moqui.search.SearchServices.index#WikiSpacePages -->
     <service verb="get" noun="WikiPageManualDocumentData" authenticate="anonymous-view" no-remember-parameters="true">
         <implements service="org.moqui.EntityServices.add#ManualDocumentData"/>
         <actions>

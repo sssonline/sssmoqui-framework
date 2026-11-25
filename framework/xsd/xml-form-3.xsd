@@ -1281,6 +1281,11 @@ along with this software (see the LICENSE.md file). If not, see
         <xs:attribute name="depends-optional" type="boolean" default="false">
             <xs:annotation><xs:documentation>Set to true to get options even if a depends-on field is empty.</xs:documentation></xs:annotation>
         </xs:attribute>
+        <xs:attribute name="depends-empty-text" type="xs:string">
+            <xs:annotation><xs:documentation>SSS (#1366): text the open drop-down shows while a depends-on field is empty
+                and there are no options, in place of "No results found" (for example "Pick Sold By first"). Expanded as
+                a string with the screen context. Only for the Vue (vuet) renderer.</xs:documentation></xs:annotation>
+        </xs:attribute>
         <xs:attribute name="initial-load" type="boolean" default="false">
             <xs:annotation>
                 <xs:documentation>

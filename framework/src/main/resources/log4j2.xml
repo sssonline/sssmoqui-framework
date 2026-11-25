@@ -50,7 +50,6 @@ https://logging.apache.org/log4j/2.x/manual/layouts.html#PatternLayout
         <Logger name="org.apache.fop.fo.extensions.svg.SVGElementMapping" level="fatal"/>
 
         <Logger name="freemarker" level="warn"/>
-        <Logger name="org.elasticsearch" level="warn"/>
         <Logger name="org.drools" level="info"/>
         <Logger name="atomikos" level="warn"/>
         <Logger name="com.atomikos" level="warn"/>

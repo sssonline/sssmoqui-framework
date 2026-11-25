@@ -92,23 +92,17 @@ along with this software (see the LICENSE.md file). If not, see
     <!-- ========================================================= -->
 
     <entity entity-name="DataDocument" package="moqui.entity.document" use="configuration" short-alias="dataDocuments">
-        <field name="dataDocumentId" type="id" is-pk="true"><description>For ElasticSearch compatibility, and as a general good
-            practice for use as a dynamic view-entity, must follow entity name convention of camel case and starting with a capital letter.</description></field>
+        <field name="dataDocumentId" type="id" is-pk="true"><description>As a general good practice for
+            use as a dynamic view-entity, must follow entity name convention of camel case and starting with a capital letter.</description></field>
         <field name="documentName" type="text-medium"><description>The name of the document for display in search
             results and such. Is generally expanded on display and may use any field in the DataDocument.</description></field>
         <field name="documentTitle" type="text-medium"><description>A title for each document instance for display in
             search results or other places. Meant to be string expanded using a "flattened" version of the document
             (see the CollectionUtilities.flattenNestedMap() method).</description></field>
-        <field name="indexName" type="text-medium"><description>This should be specified for documents that will be indexed by
-            ElasticSearch and must be lower-case (ElasticSearch requires all lower-case). Because of changes in ElasticSearch 5
-            this is no longer the actual index name and is instead an alias for each index from a DataDocument.</description></field>
         <field name="primaryEntityName" type="text-medium"/>
         <field name="manualDataServiceName" type="text-medium"><description>Name of a service to call to get additional
             data to include in the document. This service should implement the
             org.moqui.EntityServices.add#ManualDocumentData interface.</description></field>
-        <field name="manualMappingServiceName" type="text-medium"><description>Name of a service to call to alter the generated
-            elasticsearch mapping for the data document. This service should implement the
-            org.moqui.EntityServices.transform#DocumentMapping interface.</description></field>
 
         <relationship type="many" related="moqui.entity.document.DataDocumentField" short-alias="fields">
             <key-map field-name="dataDocumentId"/></relationship>
@@ -140,12 +134,6 @@ along with this software (see the LICENSE.md file). If not, see
         <field name="fieldNameAlias" type="text-medium"><description>Alias to put in document output for field name
             (ie final part of fieldPath only). Defaults to final part of fieldPath. Must be unique within the document
             and can be used in EntityCondition passed into the EntityFacade.findDataDocuments() method.</description></field>
-        <field name="fieldType" type="text-short"><description>The ElasticSearch field type to use, default is based on entity
-            field type or for expression fields defaults to 'double'.</description></field>
-        <field name="sortable" type="text-indicator"><description>Indicates the field should be sortable. This is needed because
-            in ElasticSearch we have two string types to work with: text (tokenized for search, not sortable) and keyword (sortable
-            but not tokenized for search). In ElasticSearch this adds [field name].keyword field of type keyword to sort on if the
-            entity field is a 'text' type ElasticSearch field.</description></field>
         <field name="defaultDisplay" type="text-indicator"><description>Fields displayed by default, set to N to not display in output.</description></field>
         <field name="functionName" type="text-short"><description>If specific the field is queried with the given function.
             Must be one of the functions available in the view-entity.alias.@function attribute.</description></field>
@@ -208,13 +196,11 @@ along with this software (see the LICENSE.md file). If not, see
     <entity entity-name="DataFeed" package="moqui.entity.feed" use="configuration">
         <field name="dataFeedId" type="id" is-pk="true"/>
         <field name="dataFeedTypeEnumId" type="id"/>
-        <field name="indexOnStartEmpty" type="text-indicator"><description>If Y index the feed on start if the index does not yet
-            exist (for servers where ES data not persisted between restarts)</description></field>
         <field name="feedName" type="text-medium"/>
         <field name="feedReceiveServiceName" type="text-medium"><description>The service named here should implement the
-            org.moqui.EntityServices.receive#DataFeed interface; defaults in some cases to 'org.moqui.search.SearchServices.index#DataDocuments'</description></field>
+            org.moqui.EntityServices.receive#DataFeed interface; with none the feed does nothing.</description></field>
         <field name="feedDeleteServiceName" type="text-medium"><description>The service named here should implement the
-            org.moqui.EntityServices.receive#DataFeedDelete interface; defaults in some cases to 'org.moqui.search.SearchServices.delete#DataDocument'</description></field>
+            org.moqui.EntityServices.receive#DataFeedDelete interface; with none the feed does nothing on delete.</description></field>
         <field name="lastFeedStamp" type="date-time"><description>Used only for periodic feeds.</description></field>
         <relationship type="one" title="DataFeedType" related="moqui.basic.Enumeration" short-alias="type">
             <key-map field-name="dataFeedTypeEnumId"/></relationship>
@@ -239,13 +225,6 @@ along with this software (see the LICENSE.md file). If not, see
             <key-map field-name="dataFeedId"/></member-entity>
         <alias-all entity-alias="DTFD"/>
         <alias entity-alias="DFD" name="dataDocumentId"/>
-    </view-entity>
-    <view-entity entity-name="DataFeedDocumentDetail" package="moqui.entity.feed">
-        <member-entity entity-alias="DFD" entity-name="moqui.entity.feed.DataFeedDocument"/>
-        <member-entity entity-alias="DDOC" entity-name="moqui.entity.document.DataDocument" join-from-alias="DFD">
-            <key-map field-name="dataDocumentId"/></member-entity>
-        <alias-all entity-alias="DDOC"/>
-        <alias entity-alias="DFD" name="dataFeedId"/>
     </view-entity>
 
     <!-- ========================================================= -->

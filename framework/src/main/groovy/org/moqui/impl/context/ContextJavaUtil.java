@@ -45,8 +45,6 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.*;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -609,22 +607,6 @@ public class ContextJavaUtil {
         GStringJsonSerializer() { super(GString.class); }
         @Override public void serialize(GString value, JsonGenerator gen, SerializerProvider serializers)
                 throws IOException, JsonProcessingException { if (value != null) gen.writeString(value.toString()); }
-    }
-    static class TimestampNoNegativeJsonSerializer extends StdSerializer<Timestamp> {
-        TimestampNoNegativeJsonSerializer() { super(Timestamp.class); }
-        @Override public void serialize(Timestamp value, JsonGenerator gen, SerializerProvider serializers)
-                throws IOException, JsonProcessingException {
-            if (value != null) {
-                long time = value.getTime();
-                if (time < 0) {
-                    String isoUtc = value.toInstant().atZone(ZoneOffset.UTC.normalized()).format(DateTimeFormatter.ISO_INSTANT);
-                    gen.writeString(isoUtc);
-                    // logger.warn("Negative Timestamp " + time + ": " + isoUtc);
-                } else {
-                    gen.writeNumber(time);
-                }
-            }
-        }
     }
     static class LiteStringMapJsonSerializer extends StdSerializer<LiteStringMap> {
         LiteStringMapJsonSerializer() { super(LiteStringMap.class); }

@@ -217,7 +217,11 @@ class EntityDataLoaderImpl implements EntityDataLoader {
                 }
             }
             // do second pass to make sure all FKs created
-            if (createdTables) {
+            // #1342: with LOAD_DELAY_INDEX_ON_CREATE the tables were already created at startup with no indexes or FKs, so
+            // this pass must always run then (both creates check for existing ones first). It used to run only because the
+            // removed Elastic datasource always reported a created table.
+            boolean delayedIndexes = System.getenv('LOAD_DELAY_INDEX_ON_CREATE') == 'true'
+            if (createdTables || delayedIndexes) {
                 logger.info("Tables were created, checking FKs for all entities in groups ${allConfiguredGroups}")
                 for (String entityName in efi.getAllEntityNames()) {
                     String groupName = efi.getEntityGroupName(entityName) ?: efi.defaultGroupName

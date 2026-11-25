@@ -763,7 +763,9 @@ class EntityDataFeed {
                             for (EntityValue dataFeedAndDocument in dataFeedAndDocumentList) {
                                 // NOTE: this is a sync call so authz disabled is preserved; it is in its own thread
                                 //     so user/etc are not inherited here
-                                String serviceName = (String) dataFeedAndDocument.feedReceiveServiceName ?: 'org.moqui.search.SearchServices.index#DataDocuments'
+                                // a feed with no receive service does nothing (it used to default to search indexing)
+                                String serviceName = (String) dataFeedAndDocument.feedReceiveServiceName
+                                if (!serviceName) continue
                                 try {
                                     ecfi.serviceFacade.sync().name(serviceName).parameters([dataFeedId:dataFeedAndDocument.dataFeedId,
                                             feedStamp:feedStamp, documentList:documents]).call()
@@ -825,7 +827,9 @@ class EntityDataFeed {
                     for (EntityValue dataFeedAndDocument in dataFeedAndDocumentList) {
                         // NOTE: this is a sync call so authz disabled is preserved; it is in its own thread
                         //     so user/etc are not inherited here
-                        String serviceName = (String) dataFeedAndDocument.feedDeleteServiceName ?: 'org.moqui.search.SearchServices.delete#DataDocument'
+                        // a feed with no delete service does nothing on delete (it used to default to search indexing)
+                        String serviceName = (String) dataFeedAndDocument.feedDeleteServiceName
+                        if (!serviceName) continue
                         try {
                             if (servicesCalled.contains(serviceName)) continue
                             ecfi.serviceFacade.sync().name(serviceName)

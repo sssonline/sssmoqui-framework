@@ -12,8 +12,6 @@ public interface EntityConditionImplBase extends EntityCondition {
 
     /** Build SQL WHERE clause text to evaluate condition in a database. */
     void makeSqlWhere(EntityQueryBuilder eqb, EntityDefinition subMemberEd);
-    /** Build ElasticSearch style search filter */
-    void makeSearchFilter(List<Map<String, Object>> filterList);
 
     void getAllAliases(Set<String> entityAliasSet, Set<String> fieldAliasSet);
     /** Get only conditions for fields in the member-entity of a view-entity, or if null then all aliases for member entities without sub-select=true */

@@ -227,7 +227,7 @@ class EntityDataDocument {
             // sssonline local patch (Simple Report #1157): Match Any joins the ordinary filters with OR; filters on a
             // summarized column (HAVING) always all apply; Ask When Run filters are left out of the saved report, and
             // the screen that runs it supplies their values (see makeRunCondition). A document with neither setting,
-            // including every shipped search and feed document, runs exactly as before.
+            // including every shipped feed document, runs exactly as before.
             boolean matchAny = "Y".equals(ddi.dataDocument.getNoCheckSimple("matchAny"))
             List<EntityCondition> whereCondList = new ArrayList<>()
             int dataDocumentConditionListSize = ddi.dataDocumentConditionList.size()
@@ -291,86 +291,6 @@ class EntityDataDocument {
         return mainFind
     }
 
-    /** Build data document Maps from DB data, feed in batches to specified service. This is called from the SearchServices.index#DataFeedDocuments service */
-    int feedDataDocuments(String dataDocumentId, EntityCondition condition, Timestamp fromUpdateStamp, Timestamp thruUpdatedStamp,
-            String feedReceiveServiceName, Integer batchSizeOvd) {
-        if (feedReceiveServiceName == null || feedReceiveServiceName.isEmpty()) {
-            logger.warn("In feedDataDocuments no feed receive service name specified, not searching and feeding ${dataDocumentId} documents")
-            return 0
-        }
-        int batchSize = batchSizeOvd != null ? batchSizeOvd.intValue() : 1000
-        logger.info("Feeding data documents for dataDocumentId ${dataDocumentId} in batches of ${batchSize} to service ${feedReceiveServiceName}")
-
-        DataDocumentInfo ddi = new DataDocumentInfo(dataDocumentId, efi)
-
-        long startTimeMillis = System.currentTimeMillis()
-        Timestamp docTimestamp = thruUpdatedStamp != (Timestamp) null ? thruUpdatedStamp : new Timestamp(startTimeMillis)
-        String docTsString = docTimestamp.toInstant().atZone(ZoneOffset.UTC.normalized()).format(DateTimeFormatter.ISO_INSTANT)
-
-        boolean hasAllPrimaryPks = ddi.hasAllPrimaryPks
-        if (!hasAllPrimaryPks) logger.warn("DataDocument ${dataDocumentId} does not have all primary keys for feed to service ${feedReceiveServiceName}")
-        Map<String, Map> documentMapMap = hasAllPrimaryPks ? new LinkedHashMap<String, Map>(batchSize + 10) : null
-        ArrayList<Map> documentMapList = hasAllPrimaryPks ? null : new ArrayList<Map>(batchSize + 10)
-
-        EntityFind mainFind = makeDataDocumentFind(ddi, fromUpdateStamp, thruUpdatedStamp)
-        if (condition != null) mainFind.condition(condition)
-
-        // for this to work sort by primary key fields (of primary entity) so all records for a given document are together
-        mainFind.orderBy(ddi.primaryPkFieldNames)
-
-        // do the one big query
-        String lastDocId = null
-        int docCount = 0
-        try (EntityListIterator mainEli = mainFind.iterator()) {
-            logger.info("Feed dataDocumentId ${dataDocumentId} query complete (cursor opened) in ${System.currentTimeMillis() - startTimeMillis}ms")
-            EntityValue ev
-            while ((ev = (EntityValue) mainEli.next()) != null) {
-                String curDocId = ddi.makeDocId(ev)
-                if (!curDocId.equals(lastDocId)) {
-                    docCount++
-
-                    // index the batch if time to, with sort by PK fields when we get a new combined doc ID
-                    //     we are in results between documents (single document often has multiple rows)
-                    int docsSoFar = hasAllPrimaryPks ? documentMapMap.size() : documentMapList.size()
-                    if (docsSoFar >= batchSize) {
-                        // logger.warn("curDocId ${curDocId} lastDocId ${lastDocId}")
-
-                        if (hasAllPrimaryPks) {
-                            documentMapList = new ArrayList<>(documentMapMap.values())
-                        }
-                        postProcessDocMapList(documentMapList, ddi)
-
-                        // call the feed receive service
-                        efi.ecfi.serviceFacade.sync().name(feedReceiveServiceName).parameter("documentList", documentMapList)
-                                .noRememberParameters().call()
-                        // stop if there was an error
-                        if (efi.ecfi.getEci().messageFacade.hasError()) break
-
-                        documentMapMap = hasAllPrimaryPks ? new LinkedHashMap<String, Map>(batchSize + 10) : null
-                        documentMapList = hasAllPrimaryPks ? null : new ArrayList<Map>(batchSize + 10)
-                    }
-                }
-
-                // continue current doc or ready to move on to next doc, merge the current result
-                lastDocId = mergeValueToDocMap(ev, ddi, documentMapMap, documentMapList, docTsString)
-            }
-            // feed remaining documents
-            if (documentMapMap != null && documentMapMap.size() > 0) {
-                documentMapList = new ArrayList<>(documentMapMap.values())
-            }
-            if (documentMapList != null && documentMapList.size() > 0) {
-                postProcessDocMapList(documentMapList, ddi)
-                // call the feed receive service
-                efi.ecfi.serviceFacade.sync().name(feedReceiveServiceName).parameter("documentList", documentMapList).call()
-            }
-        } finally {
-            logger.info("Feed dataDocumentId ${dataDocumentId} feed complete and cursor closed in ${System.currentTimeMillis() - startTimeMillis}ms")
-        }
-
-        logger.info("Fed ${docCount} data documents for dataDocumentId ${dataDocumentId} to service ${feedReceiveServiceName}")
-        return docCount
-    }
-
     ArrayList<Map> getDataDocuments(String dataDocumentId, EntityCondition condition, Timestamp fromUpdateStamp, Timestamp thruUpdatedStamp) {
         DataDocumentInfo ddi = new DataDocumentInfo(dataDocumentId, efi)
 
@@ -407,7 +327,6 @@ class EntityDataDocument {
     String mergeValueToDocMap(EntityValue ev, DataDocumentInfo ddi, Map<String, Map> documentMapMap,
             ArrayList<Map> documentMapList, String docTsString) {
         /*
-          - _index = DataDocument.indexName
           - _type = dataDocumentId
           - _id = pk field values from primary entity, double colon separated
           - _timestamp = document created time
@@ -423,8 +342,6 @@ class EntityDataDocument {
             docMap.put("_type", ddi.dataDocumentId)
             if (docId != null && !docId.isEmpty()) docMap.put("_id", docId)
             docMap.put('_timestamp', docTsString)
-            String _index = ddi.dataDocument.indexName
-            if (_index != null && !_index.isEmpty()) docMap.put('_index', _index.toLowerCase())
             docMap.put('_entity', ddi.primaryEd.getShortOrFullEntityName())
 
             // add Map for primary entity

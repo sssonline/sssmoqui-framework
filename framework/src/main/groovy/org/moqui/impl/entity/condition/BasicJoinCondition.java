@@ -18,7 +18,6 @@ import org.moqui.entity.EntityException;
 import org.moqui.impl.entity.EntityDefinition;
 import org.moqui.impl.entity.EntityQueryBuilder;
 import org.moqui.impl.entity.EntityConditionFactoryImpl;
-import org.moqui.util.CollectionUtilities;
 
 import java.io.IOException;
 import java.io.ObjectInput;
@@ -53,19 +52,6 @@ public class BasicJoinCondition implements EntityConditionImplBase {
         rhsInternal.makeSqlWhere(eqb, subMemberEd);
         sql.append(')');
     }
-    @Override
-    public void makeSearchFilter(List<Map<String, Object>> filterList) {
-        List<Map<String, Object>> childList = new ArrayList<>(2);
-        lhsInternal.makeSearchFilter(childList);
-        rhsInternal.makeSearchFilter(childList);
-
-        Map<String, Object> boolMap = new HashMap<>();
-        if (operator == AND) boolMap.put("filter", childList);
-        else boolMap.put("should", childList);
-
-        filterList.add(CollectionUtilities.toHashMap("bool", boolMap));
-    }
-
     @Override
     public boolean mapMatches(Map<String, Object> map) {
         boolean lhsMatches = lhsInternal.mapMatches(map);

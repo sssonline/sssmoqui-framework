@@ -1,4 +1,4 @@
-# A Docker Compose application with Moqui, MySQL, OpenSearch, OpenSearch Dashboards, and virtual hosting through
+# A Docker Compose application with Moqui, MySQL, and virtual hosting through
 # nginx-proxy supporting multiple moqui instances on different hostnames.
 
 # Run with something like this for detached mode:
@@ -53,40 +53,3 @@ services:
      - MYSQL_DATABASE=moqui
      - MYSQL_USER=moqui
      - MYSQL_PASSWORD=moqui
-
-  moqui-search:
-    image: opensearchproject/opensearch:2.4.0
-    container_name: moqui-search
-    restart: always
-    ports:
-      # change this as needed to bind to any address or even comment to not expose port outside containers
-      - 127.0.0.1:9200:9200
-      - 127.0.0.1:9300:9300
-    volumes:
-      # edit these as needed to map configuration and data storage
-      - ./opensearch/data:/usr/share/opensearch/data
-      # - ./opensearch/config/opensearch.yml:/usr/share/opensearch/config/opensearch.yml
-      # - ./opensearch/logs:/usr/share/opensearch/logs
-    environment:
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - discovery.type=single-node
-      - network.host=_site_
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.4.0
-    container_name: opensearch-dashboards
-    links:
-      - moqui-search
-    ports:
-      - 5601:5601
-    expose:
-      - 127.0.0.1:5601:5601
-    environment:
-      OPENSEARCH_HOSTS: '["https://moqui-search:9200"]'

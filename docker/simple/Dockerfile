@@ -17,33 +17,13 @@ COPY execlib execlib
 # always want the runtime directory
 COPY runtime runtime
 
-# create user for search and chown corresponding files
-ARG search_name=opensearch
-
-RUN if [ -d runtime/opensearch/bin ]; then echo "Installing OpenSearch User"; \
-      search_name=opensearch; \
-      groupadd -g 1000 opensearch 2>/dev/null || echo "group 1000 already exists" && \
-      useradd -u 1000 -g 1000 -G 0 -d /opt/moqui/runtime/opensearch opensearch 2>/dev/null || echo "user 1000 already exists" && \
-      chmod 0775 /opt/moqui/runtime/opensearch && \
-      chown -R 1000:0 /opt/moqui/runtime/opensearch; \
-    elif [ -d runtime/elasticsearch/bin ]; then echo "Installing ElasticSearch User"; \
-      search_name=elasticsearch; \
-      groupadd -r elasticsearch && \
-      useradd --no-log-init -r -g elasticsearch -d /opt/moqui/runtime/elasticsearch elasticsearch && \
-      chown -R elasticsearch:elasticsearch runtime/elasticsearch; \
-    fi
-
 # exposed as volumes for configuration purposes
 VOLUME ["/opt/moqui/runtime/conf", "/opt/moqui/runtime/lib", "/opt/moqui/runtime/classes", "/opt/moqui/runtime/ecomponent"]
 # exposed as volumes to persist data outside the container, recommended
-VOLUME ["/opt/moqui/runtime/log", "/opt/moqui/runtime/txlog", "/opt/moqui/runtime/sessions", "/opt/moqui/runtime/db", "/opt/moqui/runtime/$search_name"]
+VOLUME ["/opt/moqui/runtime/log", "/opt/moqui/runtime/txlog", "/opt/moqui/runtime/sessions", "/opt/moqui/runtime/db"]
 
 # Main Servlet Container Port
 EXPOSE 80
-# Search HTTP Port
-EXPOSE 9200
-# Search Cluster (TCP Transport) Port
-EXPOSE 9300
 # Hazelcast Cluster Port
 EXPOSE 5701
 

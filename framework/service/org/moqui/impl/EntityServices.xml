@@ -18,12 +18,6 @@ along with this software (see the LICENSE.md file). If not, see
     <!-- ========== DataDocument and Feed Services ========== -->
     <!-- ==================================================== -->
 
-    <!-- org.moqui.impl.EntityServices.index#DataDocuments moved to org.moqui.search.SearchServices.index#DataDocuments -->
-    <!-- org.moqui.impl.EntityServices.put#DataDocumentMappings moved to org.moqui.search.SearchServices.put#DataDocumentMappings -->
-    <!-- org.moqui.impl.EntityServices.index#DataFeedDocuments moved to org.moqui.search.SearchServices.index#DataFeedDocuments -->
-    <!-- org.moqui.impl.EntityServices.search#DataDocuments moved to org.moqui.search.SearchServices.search#DataDocuments -->
-    <!-- org.moqui.impl.EntityServices.search#CountBySource moved to org.moqui.search.SearchServices.search#CountBySource -->
-
     <service verb="get" noun="DataFeedDocuments">
         <in-parameters>
             <parameter name="dataFeedId" required="true"/>
@@ -49,7 +43,6 @@ along with this software (see the LICENSE.md file). If not, see
         <in-parameters>
             <auto-parameters include="nonpk"/>
             <parameter name="dataDocumentId" required="true"><matches regexp="[A-Z]\w*" message="Must start with a upper case letter and contain only letters and digits"/></parameter>
-            <parameter name="indexName"><matches regexp="[a-z][a-z0-9_]*" message="Must contain only lower case letters, digits, and underscore"/></parameter>
             <parameter name="userGroupId"/>
         </in-parameters>
         <actions>
@@ -81,7 +74,6 @@ along with this software (see the LICENSE.md file). If not, see
         <in-parameters>
             <parameter name="dataDocumentId" required="true"/>
             <parameter name="newDataDocumentId" required="true"><matches regexp="[A-Z]\w*" message="Must start with a upper case letter and contain only letters and digits"/></parameter>
-            <parameter name="newIndexName"><matches regexp="[a-z][a-z0-9_]*" message="Must contain only lower case letters, digits, and underscore"/></parameter>
             <parameter name="copyConditions" default="false" type="Boolean"/>
             <parameter name="copyLinks" default="false" type="Boolean"/>
         </in-parameters>
@@ -95,7 +87,6 @@ along with this software (see the LICENSE.md file). If not, see
 
             <entity-find-one entity-name="moqui.entity.document.DataDocument" value-field="dataDocument" cache="false"/>
             <set field="dataDocument.dataDocumentId" from="newDataDocumentId"/>
-            <if condition="newIndexName"><set field="dataDocument.indexName" from="newIndexName"/></if>
             <entity-create value-field="dataDocument"/>
 
             <entity-find entity-name="moqui.entity.document.DataDocumentField" list="ddfList">
@@ -315,10 +306,10 @@ along with this software (see the LICENSE.md file). If not, see
         - DROP TABLE DATA_DOCUMENT_FIELD
         - DROP TABLE DATA_DOCUMENT_USER_GROUP
         - DROP TABLE DATA_DOCUMENT
-        - restart, load seed, index feeds
+        - restart, load seed
     -->
     <service verb="delete" noun="AllDataDocumentsAndFeeds">
-        <description>To fully update data documents and feeds from seed data: run this, import 'seed' data, run feed indexes.
+        <description>To fully update data documents and feeds from seed data: run this, then import 'seed' data.
             If any custom data documents (not in seed data) are in place they will be lost.</description>
         <actions>
             <entity-delete-by-condition entity-name="moqui.entity.feed.DataFeedDocument"/>
