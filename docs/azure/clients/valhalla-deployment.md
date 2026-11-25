@@ -43,7 +43,7 @@ If it ever has to grow: DB to GP D2ds (+~$85), VM to D4as_v6 (+~$67). A 1-yr VM 
 | Server parameters | `max_prepared_transactions=100`, `log_min_duration_statement=2000`, `idle_in_transaction_session_timeout=600000`; restarted | ✅ 2026-10-19 |
 | App database | DB `aspen` owned by login `aspen_app` (password in SSS password manager); `aspenadmin` granted `aspen_app`; `verify-full` login as `aspen_app` tested | ✅ 2026-10-19 |
 | VM base setup | OS patched (no reboot needed), unattended-upgrades on; Temurin JDK 11.0.32.1; nginx 1.24 (default site only), certbot 2.9, fail2ban; service account `aspensvc` (no login); `/opt/aspen/{releases,shared/{conf,log,txlog,sessions}}` 0750; CA bundle at `/opt/aspen/shared/conf/azure-postgres-root-ca.pem`; ufw: deny in except 22/80/443 | ✅ 2026-10-19 |
-| Release | `/opt/aspen/releases/2026-10-19_06cbcf0d` (WAR sha256 `da60abafb722…`, 173 MB unpacked, `RELEASE.txt` lists every repo commit, branch `update`), `current` → it; `log`/`txlog`/`sessions` → `shared/` | ✅ 2026-10-19 |
+| Release | **current: `2026-11-24_66808546`** (WAR sha256 `8740b370887b8c4f…`, 100 MB, `RELEASE.txt` lists every repo commit, branch `update`); kept on disk: `2026-11-24_66808546`, `2026-11-03_92f4399a`, `2026-10-29_4dea19a9` (3, at the limit); `log`/`txlog`/`sessions` → `shared/` | ✅ 2026-11-25 |
 | Service | `/etc/systemd/system/aspen.service` enabled (Temurin 11 path pinned, preflight tested); `/opt/aspen/aspen.env` root 0600, secrets filled, `webapp_https_enabled=true`, host `valhalla.spokanesoftware.com`, `X-Real-IP` | ✅ 2026-10-20 |
 | NSG 80/443 | `allow-web` TCP 80,443 from Any, priority 310 | ✅ 2026-10-19 |
 | DNS | Cloudflare `A valhalla.spokanesoftware.com → 20.25.186.24`, DNS only | ✅ 2026-10-19 |
@@ -74,7 +74,7 @@ Phase numbers refer to `../INSTALL.md`.
 2. [x] `MoquiProductionConfPostgres.xml` + `prodPostgres.sh` (secrets via env vars), aligned with the prod credentials card ([Trello](https://trello.com/c/BfaA2YNv)): allowlisted secret-free confs ship inside each release
 3. [x] XA on Azure Postgres: `max_prepared_transactions=100` accepted + restart (2026-10-19)
 4. [x] Provision Azure: VM, DB subnet, Postgres 18 B2s with geo-redundant backup + private access (phases 1–4, 2026-10-19)
-5. [x] Releases: `2026-10-19_06cbcf0d` (first, phase 8), `2026-10-29_4dea19a9`, **current `2026-11-03_92f4399a`** (Account Pool Overhaul, via UPDATE.md). All three kept on the VM for rollback. Release **tags** across repos still to do
+5. [x] Releases: `2026-10-19_06cbcf0d` (first, phase 8), `2026-10-29_4dea19a9`, `2026-11-03_92f4399a` (Account Pool Overhaul), **current `2026-11-24_66808546`** (outside-broker epic, sales invoicing permission, login security/FGS import gate, export fixes, via UPDATE.md). `2026-10-19_06cbcf0d` removed 2026-11-25 to stay at 3 on disk. Release **tags** across repos still to do
 6. [x] Bitronix server ID `aspen-vm-aspen-valhalla-3873d455`, unchanged across 5 starts; `shared/txlog` is the VM's own
 7. [x] First start + data load (105 s), TLS `verify-full` to Postgres, admin account, HTTPS live at https://valhalla.spokanesoftware.com (phases 5–15, 2026-10-19/20)
 8. [x] Budget alert (phase 16)

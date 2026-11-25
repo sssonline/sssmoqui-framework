@@ -6,7 +6,7 @@ How to ship new Aspen code to a client VM that [INSTALL.md](INSTALL.md) set up. 
 
 1. **Pull and check** (Mac): get every repo up to date on `update` with no local changes, and read what's running on the client from its `RELEASE.txt`.
 2. **Review the changes**: since the client's release, look for new indexes, changed seed data, one-time `upgrade#` services and new scheduled jobs. Write down what will need doing after the switch.
-3. **Test** (Mac): run the Postgres test suite. It should pass; if you ship anyway, write down why.
+3. **Test** (Mac): `./aspenTest.sh --db postgres flow` (flow suite only). The summary must show ✓; if you ship anyway, write down why.
 4. **Build** (Mac): build one WAR file, check its contents, and write a `RELEASE.txt` manifest naming every repo's commit.
 5. **Send and stage** (Mac → VM): copy the WAR to the VM and unpack it into a new release folder beside the running one. Users notice nothing.
 6. **Switch** (VM, about 3–5 minutes down): note the time, stop Aspen, point `current` at the new release, start Aspen, wait for the site, check the startup log.
@@ -82,18 +82,17 @@ Write the findings in the install log before going further.
 
 ## 3. Test (Mac)
 
-Start Docker Desktop (`open -a Docker`), stop any local Moqui, then:
-```bash
-gradle cleanPullCompTest -Pconf=conf/MoquiDevConfPostgres.xml     # local Postgres 18, must pass
-```
-Valhalla's 2026-10 baseline was 290 tests, 0 failures, 0 errors. Don't ship a red suite without a decision: if someone decides to ship anyway, record the real totals, which failures they judged test-only, and who decided. Gradle stops at the first component with failures, so later components didn't run; say so too.
+Clients run on Postgres, so the Postgres run is the one that decides a release. H2 runs are for day-to-day development and aren't needed here. Tests use the local test database `moquitest` and never touch your dev database (rules: `runtime/component/aspen/src/test/TESTING.md`).
 
-Read totals from the results (the console line covers only the component that failed):
+Start Docker Desktop (`open -a Docker`; the test database lives in the `moqui-postgres` container), stop any local Moqui (the run rebuilds `moqui.war`), make sure no `entity_ds_*` variable is exported in your shell, then:
 ```bash
-find runtime/component -path '*/build/test-results/test/*.xml' -newer build.gradle -exec grep -ho 'tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' {} + \
-  | awk -F'"' '{t+=$2;s+=$4;f+=$6;e+=$8} END {print t" tests, "f" failures, "e" errors, "s" skipped"}'
+./aspenTest.sh --db postgres flow
 ```
-Each run overwrites the previous results, so copy the numbers into the install log right away.
+`flow` runs only the flow suite (AspenFlow00–11): the end-to-end business flows, which build the demo data and finish with the whole-database checks. That is the release gate. The module, Screens and Upgrade suites (`all`) take much longer and are for developers, not deploys. It asks once before starting (`--yes` skips the question); the Mac must stay awake. It tests the code already checked out, so do step 1 first.
+
+At the end it prints a summary line for `postgres` with `✓` or `✗`, tests/failures/errors/skipped, and the failing tests by name. It must show `✓`. The JUnit results are kept in `runtime/log/test-results/postgres-<time>`, so a later run doesn't overwrite them; put the summary line and that folder name in the install log.
+
+Don't ship a red run without a decision. If someone decides to ship anyway, record the real totals, which failures they judged test-only, and who decided.
 
 ## 4. Build and check the WAR (Mac)
 
